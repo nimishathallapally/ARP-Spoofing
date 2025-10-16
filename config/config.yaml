@@ -1,0 +1,71 @@
+# Data Configuration
+data:
+  raw_data_path: "data/raw"
+  processed_data_path: "data/processed"
+  dataset_files:
+    - "CIC_MITM_ArpSpoofing_All_Labelled.csv"
+    - "All_Labelled.csv"
+    - "GIT_arpspoofLabelledData.csv"
+  
+  # Dataset selection
+  select_best_datasets: true
+  top_n_datasets: 3
+  min_quality_score: 60.0
+  balance_classes: true
+
+# Feature Engineering
+features:
+  n_features: 25
+  selection_method: "hybrid"  # Options: hybrid, f_test, mutual_info, rf_importance, all
+  create_derived_features: true
+
+# Model Training
+training:
+  test_size: 0.2
+  validation_split: 0.1
+  random_state: 42
+  
+  # Cross-validation
+  cv_folds: 5
+  cv_scoring: "f1"
+
+# Model Selection
+model_selection:
+  # Weights for composite scoring
+  weights:
+    f1_score: 0.40
+    recall: 0.30
+    accuracy: 0.20
+    precision: 0.10
+
+# Alert Thresholds
+alert_thresholds:
+  SAFE: [0.0, 0.3]
+  MEDIUM: [0.3, 0.6]
+  HIGH: [0.6, 0.85]
+  CRITICAL: [0.85, 1.0]
+
+# Output Configuration
+output:
+  models_path: "models/saved_models"
+  plots_path: "outputs/plots"
+  logs_path: "outputs/logs"
+  reports_path: "outputs/reports"
+  
+  # Visualization settings
+  plot_format: "png"
+  plot_dpi: 300
+  plot_style: "seaborn-v0_8"
+
+# Logging
+logging:
+  level: "INFO"  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  log_to_file: true
+  log_file: "outputs/logs/arp_detection.log"
+  console_output: true
+
+# Real-Time Detection
+realtime:
+  simulation_size: 100
+  show_progress: true
+  save_results: true
