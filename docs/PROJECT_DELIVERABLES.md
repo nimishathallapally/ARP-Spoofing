@@ -1107,21 +1107,6 @@ pytest tests/test_detector.py -v
 - Inline comments for complex logic
 - Example usage in `__main__` blocks
 
-### 8.9 Resources & References
-
-**Datasets:**
-- [CIC-MITM-ARP Dataset](https://www.unb.ca/cic/datasets/)
-- [UCI Machine Learning Repository](https://archive.ics.uci.edu/ml/)
-
-**Research Papers:**
-1. "Machine Learning for Network Security" - 2023
-2. "ARP Spoofing Detection using Random Forest" - 2022
-3. "Hybrid Approaches for Intrusion Detection" - 2021
-
-**Tools & Libraries:**
-- [scikit-learn Documentation](https://scikit-learn.org/)
-- [pandas Documentation](https://pandas.pydata.org/)
-- [Python Logging Best Practices](https://docs.python.org/3/howto/logging.html)
 
 **Community:**
 - GitHub Repository: https://github.com/nimishathallapally/ARP-Spoofing
