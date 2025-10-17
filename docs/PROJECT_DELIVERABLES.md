@@ -1124,27 +1124,8 @@ pytest tests/test_detector.py -v
 - [Python Logging Best Practices](https://docs.python.org/3/howto/logging.html)
 
 **Community:**
-- GitHub Repository: [Link TBD]
-- Issue Tracker: [Link TBD]
-- Discussions: [Link TBD]
+- GitHub Repository: https://github.com/nimishathallapally/ARP-Spoofing
 
-### 8.10 License
-
-This project is licensed under the **MIT License**.
-
-```
-MIT License
-
-Copyright (c) 2025 [Your Name]
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction...
-```
-
-See `LICENSE` file for full details.
-
----
 
 ## Appendix A: Performance Metrics Definitions
 
@@ -1172,13 +1153,7 @@ Where: TP = True Positive, TN = True Negative, FP = False Positive, FN = False N
 - **Hybrid Learning:** Combining supervised and unsupervised learning approaches
 - **Alert Level:** Severity classification based on prediction confidence
 
----
 
-**Document Version:** 1.0  
-**Last Updated:** October 2025  
-**Author:** [Your Name]  
-**Review Status:** ✓ Complete
 
 ---
 
-*This document fulfills all requirements for the AI-Based Real-Time Threat Analysis project, including all 8 mandatory sections with detailed explanations, visualizations, and code implementation.*
