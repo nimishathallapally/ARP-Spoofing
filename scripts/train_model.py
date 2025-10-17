@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 import argparse
 import logging
+import pandas as pd
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / 'src'))
@@ -22,6 +23,7 @@ from data_loader import DataLoader
 from feature_engineering import FeatureEngineer
 from models import ARPSpoofingModels
 from detector import ARPSpoofingDetector
+from visualizer import Visualizer
 from utils import setup_logging, load_config, save_metrics, print_header
 
 logger = logging.getLogger(__name__)
@@ -125,6 +127,54 @@ def main(config_path: str = None):
         logger.error(f"✗ Test set evaluation failed: {str(e)}")
         return 1
     
+    # ===== STEP 4C: CREATE AND EVALUATE HYBRID ENSEMBLE =====
+    print_header("STEP 4C: HYBRID ENSEMBLE MODEL", width=70, char='-')
+    
+    try:
+        logger.info("Creating hybrid ensemble (supervised + unsupervised)...")
+        hybrid_predictions, hybrid_metrics = model_trainer.create_hybrid_ensemble(
+            supervised_models=supervised_models,
+            iso_forest=iso_forest,
+            X_test=X_test,
+            y_test=y_test
+        )
+        
+        # Store hybrid ensemble metrics
+        model_trainer.performance_metrics['Hybrid Ensemble'] = hybrid_metrics
+        
+        # Generate and save confusion matrix for hybrid ensemble
+        visualizer = Visualizer(output_dir=config['output']['plots_path'])
+        
+        logger.info("Generating confusion matrix for Hybrid Ensemble...")
+        visualizer.plot_confusion_matrix(
+            y_true=y_test,
+            y_pred=hybrid_predictions,
+            model_name='Hybrid Ensemble',
+            title='Hybrid Ensemble (Supervised + Unsupervised)'
+        )
+        logger.info(f"✓ Hybrid Ensemble confusion matrix saved to {config['output']['plots_path']}")
+        
+        # Add hybrid ensemble to comparison dataframe
+        hybrid_row = pd.DataFrame([{
+            'Model': 'Hybrid Ensemble',
+            'Accuracy': hybrid_metrics['accuracy'],
+            'Precision': hybrid_metrics['precision'],
+            'Recall': hybrid_metrics['recall'],
+            'F1-Score': hybrid_metrics['f1_score'],
+            'ROC AUC': hybrid_metrics.get('roc_auc', 0.0)
+        }])
+        test_comparison_df = pd.concat([test_comparison_df, hybrid_row], ignore_index=True)
+        
+        logger.info(f"✓ Hybrid Ensemble created and evaluated")
+        logger.info(f"   Accuracy: {hybrid_metrics['accuracy']:.4f}")
+        logger.info(f"   Precision: {hybrid_metrics['precision']:.4f}")
+        logger.info(f"   Recall: {hybrid_metrics['recall']:.4f}")
+        logger.info(f"   F1-Score: {hybrid_metrics['f1_score']:.4f}")
+        
+    except Exception as e:
+        logger.error(f"✗ Hybrid ensemble creation failed: {str(e)}")
+        logger.warning("Continuing without hybrid ensemble...")
+    
     # ===== STEP 5: SELECT BEST MODEL =====
     print_header("STEP 5: MODEL SELECTION", width=70, char='-')
     
@@ -174,6 +224,9 @@ def main(config_path: str = None):
         train_metrics = model_trainer.performance_metrics.get(f"{best_model_name}_train", {})
         test_metrics = model_trainer.performance_metrics.get(best_model_name, {})
         
+        # Get hybrid ensemble metrics if available
+        hybrid_metrics = model_trainer.performance_metrics.get('Hybrid Ensemble', None)
+        
         # Prepare comprehensive metrics dictionary
         metrics_dict = {
             'model_name': best_model_name,
@@ -207,6 +260,15 @@ def main(config_path: str = None):
                 'confusion_matrix': test_metrics.get('confusion_matrix', [[0, 0], [0, 0]]).tolist() if hasattr(test_metrics.get('confusion_matrix', [[0, 0], [0, 0]]), 'tolist') else test_metrics.get('confusion_matrix', [[0, 0], [0, 0]])
             },
             
+            # Hybrid Ensemble Metrics
+            'hybrid_ensemble_metrics': {
+                'accuracy': float(hybrid_metrics.get('accuracy', 0)),
+                'precision': float(hybrid_metrics.get('precision', 0)),
+                'recall': float(hybrid_metrics.get('recall', 0)),
+                'f1_score': float(hybrid_metrics.get('f1_score', 0)),
+                'confusion_matrix': hybrid_metrics.get('confusion_matrix', [[0, 0], [0, 0]]).tolist() if hasattr(hybrid_metrics.get('confusion_matrix', [[0, 0], [0, 0]]), 'tolist') else hybrid_metrics.get('confusion_matrix', [[0, 0], [0, 0]])
+            } if hybrid_metrics else None,
+            
             # All Models Comparison
             'all_models_train': train_comparison_df.to_dict('records'),
             'all_models_test': test_comparison_df.to_dict('records')
@@ -225,6 +287,7 @@ def main(config_path: str = None):
     
     # Get test metrics for summary
     test_metrics = model_trainer.performance_metrics.get(best_model_name, {})
+    hybrid_metrics = model_trainer.performance_metrics.get('Hybrid Ensemble', None)
     
     print(f"\n{'Metric':<30} {'Value':>15}")
     print("-" * 47)
@@ -233,12 +296,25 @@ def main(config_path: str = None):
     print(f"{'Test Precision':<30} {test_metrics.get('precision', 0):>14.2%}")
     print(f"{'Test Recall':<30} {test_metrics.get('recall', 0):>14.2%}")
     print(f"{'Test F1-Score':<30} {test_metrics.get('f1_score', 0):>14.2%}")
+    
+    # Show hybrid ensemble performance if available
+    if hybrid_metrics:
+        print("-" * 47)
+        print(f"{'Hybrid Ensemble Model':<30}")
+        print(f"{'  Accuracy':<30} {hybrid_metrics.get('accuracy', 0):>14.2%}")
+        print(f"{'  Precision':<30} {hybrid_metrics.get('precision', 0):>14.2%}")
+        print(f"{'  Recall':<30} {hybrid_metrics.get('recall', 0):>14.2%}")
+        print(f"{'  F1-Score':<30} {hybrid_metrics.get('f1_score', 0):>14.2%}")
+    
+    print("-" * 47)
     print(f"{'Training Samples':<30} {len(X_train):>15,}")
     print(f"{'Test Samples':<30} {len(X_test):>15,}")
     print(f"{'Features':<30} {len(feature_names):>15}")
     print("-" * 47)
     print(f"\n✓ Model ready for deployment: {model_path}")
-    print(f"✓ Comprehensive metrics (train + test): {metrics_path}")
+    print(f"✓ Comprehensive metrics (train + test + hybrid): {metrics_path}")
+    if hybrid_metrics:
+        print(f"✓ Hybrid Ensemble confusion matrix: outputs/plots/confusion_matrix_hybrid_ensemble.png")
     print("✓ Run 'python scripts/detect_realtime.py' for real-time detection demo\n")
     
     return 0

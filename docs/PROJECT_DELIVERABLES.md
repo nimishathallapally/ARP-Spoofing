@@ -434,16 +434,28 @@ Input Features (25)
 
 ### 5.2 Model Performance Comparison
 
-**Test Set Results (27,727 samples):**
+**Test Set Results (27,726 samples):**
 
 | Model | Accuracy | Precision | Recall | F1-Score | ROC AUC |
 |-------|----------|-----------|--------|----------|---------|
-| **Random Forest** | **96.16%** | **95.49%** | **96.90%** | **96.19%** | **0.9881** |
-| Gradient Boosting | 95.37% | 94.26% | 96.61% | 95.42% | 0.9856 |
-| Neural Network | 94.23% | 94.60% | 93.82% | 94.21% | 0.9784 |
-| Hybrid Ensemble | 91.58% | 88.70% | 95.29% | 91.88% | 0.9542 |
-| Logistic Regression | 89.45% | 87.32% | 91.87% | 89.54% | 0.9423 |
-| Isolation Forest | 82.15% | 78.91% | 86.34% | 82.46% | 0.8912 |
+| **Random Forest** | **96.00%** | **96.51%** | **95.46%** | **95.98%** | **0.9943** |
+| Gradient Boosting | 95.30% | 96.20% | 94.32% | 95.25% | 0.9899 |
+| Neural Network | 93.95% | 95.39% | 92.37% | 93.85% | 0.9851 |
+| Logistic Regression | 78.69% | 76.63% | 82.56% | 79.48% | 0.8362 |
+| Isolation Forest | 43.48% | 16.37% | 3.17% | 5.32% | 0.8072 |
+| **Hybrid Ensemble** | **87.73%** | **82.67%** | **95.48%** | **88.61%** | **N/A** |
+
+**Model Analysis:**
+
+- **Random Forest** achieves the best overall performance with balanced precision and recall
+- **Gradient Boosting** shows high precision (96.20%) with slightly lower recall
+- **Neural Network** demonstrates good generalization with 93.95% accuracy
+- **Logistic Regression** serves as a reasonable baseline with 78.69% accuracy
+- **Isolation Forest** (unsupervised) has low accuracy but high ROC AUC (0.8072) for anomaly detection
+- **Hybrid Ensemble** combines supervised + unsupervised models:
+  - Highest recall (95.48%) - excellent at catching attacks
+  - Lower precision (82.67%) - more false positives
+  - Strong for security applications where missing attacks is costly
 
 **Confusion Matrices for All Models:**
 
@@ -478,7 +490,43 @@ Input Features (25)
 </tr>
 </table>
 
-*Figure 5.5: Confusion matrices for all trained models showing comparative performance*
+*Figure 5.5: Confusion matrices for individual models*
+
+**Hybrid Ensemble Confusion Matrix:**
+
+The hybrid ensemble combines predictions from all supervised models (Random Forest, Gradient Boosting, Neural Network, Logistic Regression) with the unsupervised Isolation Forest using OR logic (if either component detects an attack, the ensemble flags it as an attack).
+
+**Confusion Matrix (27,726 test samples):**
+
+```
+                    Predicted Normal    Predicted Attack
+Actual Normal            11,088              2,775
+Actual Attack               627             13,236
+```
+
+**Metrics:**
+- **True Negatives (TN):** 11,088 - Correctly identified normal traffic
+- **False Positives (FP):** 2,775 - Normal traffic incorrectly flagged as attack (20.0% of normal)
+- **False Negatives (FN):** 627 - Missed attacks (4.5% of attacks)
+- **True Positives (TP):** 13,236 - Correctly detected attacks (95.5% of attacks)
+
+**Performance Analysis:**
+```
+Accuracy:  87.73% = (11,088 + 13,236) / 27,726
+Precision: 82.67% = 13,236 / (13,236 + 2,775)
+Recall:    95.48% = 13,236 / (13,236 + 627)
+F1-Score:  88.61% = 2 × (0.8267 × 0.9548) / (0.8267 + 0.9548)
+```
+
+**Hybrid Ensemble Characteristics:**
+- ✓ **Highest Recall (95.48%)**: Catches almost all attacks - excellent for security applications
+- ✓ **Low False Negative Rate (4.5%)**: Only misses 627 out of 13,863 attacks
+- ⚠️ **Lower Precision (82.67%)**: More false alarms compared to Random Forest
+- ⚠️ **Higher False Positive Rate (20.0%)**: 2,775 normal packets flagged as attacks
+- **Trade-off**: Prioritizes catching attacks over minimizing false alarms
+- **Use Case**: Ideal for high-security environments where missing an attack is more costly than investigating false alarms
+
+*Figure 5.6: Hybrid ensemble confusion matrix showing high recall with moderate precision*
 
 ### 5.3 Best Model Selection
 
