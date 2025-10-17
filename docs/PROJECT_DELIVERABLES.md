@@ -36,7 +36,7 @@
 ### 1.1 Dataset Source
 
 - **Primary Dataset:** CIC-MITM-ARP-Spoofing Dataset
-- **Source Link:** [Canadian Institute for Cybersecurity (CIC) Dataset Repository](https://www.unb.ca/cic/datasets/)
+- **Source Link:** [ARP Spoofing Based MITM Attack Dataset](https://www.kaggle.com/datasets/mizanunswcyber/arp-spoofing-based-mitm-attack-dataset)
 - **Dataset Type:**
   - ☑ Real-world network traffic data
   - ☐ Simulated/synthetic data

@@ -125,49 +125,6 @@ def main(config_path: str = None):
         logger.error(f"✗ Test set evaluation failed: {str(e)}")
         return 1
     
-    # ===== STEP 4C: CREATE HYBRID ENSEMBLE =====
-    print_header("STEP 4C: HYBRID ENSEMBLE EVALUATION", width=70, char='-')
-    
-    try:
-        logger.info("Creating hybrid ensemble combining supervised + unsupervised models...")
-        # Get trained models
-        supervised_models_dict = {
-            name: model for name, model in model_trainer.models.items()
-            if name != 'Isolation Forest'
-        }
-        
-        # Create hybrid ensemble and get predictions + metrics
-        ensemble_pred, hybrid_metrics = model_trainer.create_hybrid_ensemble(
-            supervised_models=supervised_models_dict,
-            iso_forest=iso_forest,
-            X_test=X_test,
-            y_test=y_test
-        )
-        
-        # Add hybrid ensemble to comparison
-        hybrid_row = {
-            'Model': 'Hybrid Ensemble',
-            'Accuracy': hybrid_metrics['accuracy'],
-            'Precision': hybrid_metrics['precision'],
-            'Recall': hybrid_metrics['recall'],
-            'F1-Score': hybrid_metrics['f1_score'],
-            'ROC AUC': None,  # Not applicable for ensemble
-            'Composite Score': (hybrid_metrics['accuracy'] + hybrid_metrics['f1_score']) / 2
-        }
-        
-        # Store hybrid metrics
-        model_trainer.performance_metrics['Hybrid Ensemble'] = hybrid_metrics
-        
-        logger.info(f"✓ Hybrid Ensemble - Accuracy: {hybrid_metrics['accuracy']:.4f}, "
-                   f"Precision: {hybrid_metrics['precision']:.4f}, "
-                   f"Recall: {hybrid_metrics['recall']:.4f}, "
-                   f"F1-Score: {hybrid_metrics['f1_score']:.4f}")
-        
-    except Exception as e:
-        logger.error(f"✗ Hybrid ensemble creation failed: {str(e)}")
-        hybrid_metrics = None
-        hybrid_row = None
-    
     # ===== STEP 5: SELECT BEST MODEL =====
     print_header("STEP 5: MODEL SELECTION", width=70, char='-')
     
@@ -252,24 +209,7 @@ def main(config_path: str = None):
             
             # All Models Comparison
             'all_models_train': train_comparison_df.to_dict('records'),
-            'all_models_test': test_comparison_df.to_dict('records'),
-            
-            # Hybrid Ensemble Metrics (if created)
-            'hybrid_ensemble': {
-                'accuracy': float(hybrid_metrics.get('accuracy', 0)) if hybrid_metrics else None,
-                'precision': float(hybrid_metrics.get('precision', 0)) if hybrid_metrics else None,
-                'recall': float(hybrid_metrics.get('recall', 0)) if hybrid_metrics else None,
-                'f1_score': float(hybrid_metrics.get('f1_score', 0)) if hybrid_metrics else None,
-                'confusion_matrix': hybrid_metrics.get('confusion_matrix', [[0, 0], [0, 0]]).tolist() 
-                    if (hybrid_metrics and hasattr(hybrid_metrics.get('confusion_matrix', [[0, 0], [0, 0]]), 'tolist')) 
-                    else (hybrid_metrics.get('confusion_matrix', [[0, 0], [0, 0]]) if hybrid_metrics else [[0, 0], [0, 0]]),
-                'description': 'Ensemble combining supervised models (voting) + unsupervised (Isolation Forest) for hybrid detection',
-                'strategy': 'If either supervised OR unsupervised detects attack, flag as attack (OR logic)',
-                'components': {
-                    'supervised': list(supervised_models_dict.keys()) if 'supervised_models_dict' in locals() else [],
-                    'unsupervised': ['Isolation Forest']
-                }
-            } if hybrid_metrics else None
+            'all_models_test': test_comparison_df.to_dict('records')
         }
         
         metrics_path = Path(config['output']['reports_path']) / 'model_metrics.json'
@@ -297,19 +237,8 @@ def main(config_path: str = None):
     print(f"{'Test Samples':<30} {len(X_test):>15,}")
     print(f"{'Features':<30} {len(feature_names):>15}")
     print("-" * 47)
-    
-    # Show hybrid ensemble metrics if available
-    if hybrid_metrics:
-        print(f"\n{'HYBRID ENSEMBLE METRICS':<30}")
-        print("-" * 47)
-        print(f"{'Accuracy':<30} {hybrid_metrics.get('accuracy', 0):>14.2%}")
-        print(f"{'Precision':<30} {hybrid_metrics.get('precision', 0):>14.2%}")
-        print(f"{'Recall':<30} {hybrid_metrics.get('recall', 0):>14.2%}")
-        print(f"{'F1-Score':<30} {hybrid_metrics.get('f1_score', 0):>14.2%}")
-        print("-" * 47)
-    
     print(f"\n✓ Model ready for deployment: {model_path}")
-    print(f"✓ Comprehensive metrics (train + test + hybrid): {metrics_path}")
+    print(f"✓ Comprehensive metrics (train + test): {metrics_path}")
     print("✓ Run 'python scripts/detect_realtime.py' for real-time detection demo\n")
     
     return 0
