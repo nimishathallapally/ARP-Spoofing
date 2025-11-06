@@ -128,12 +128,21 @@ outputs/reports/*.pdf
 !outputs/plots/.gitkeep
 !outputs/reports/.gitkeep
 
+# Keep web interface screenshots
+!outputs/plots/web1.png
+!outputs/plots/web2.png
+!outputs/plots/web3.png
+
 # Temporary files
 *.tmp
 *.bak
 *.backup
 temp/
 tmp/
+
+# Session data (Flask)
+session_data/
+*.pkl
 
 # ML specific
 *.h5

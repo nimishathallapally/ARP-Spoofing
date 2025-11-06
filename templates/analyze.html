@@ -1,0 +1,361 @@
+{% extends "base.html" %}
+
+{% block title %}Analyze Dataset - ARP Spoofing Detection{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h2><i class="bi bi-file-earmark-arrow-up"></i> Analyze Dataset</h2>
+        <p class="text-muted">Upload network traffic data for batch analysis</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0"><i class="bi bi-upload"></i> Upload Dataset</h4>
+            </div>
+            <div class="card-body p-4">
+                <form id="upload-form" enctype="multipart/form-data">
+                    <!-- Model Selection -->
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">
+                            <i class="bi bi-cpu"></i> Select Detection Model
+                        </label>
+                        <select class="form-select form-select-lg" id="model-select" name="model" required>
+                            <optgroup label="🌲 Supervised Models">
+                                {% for key, model in models.items() if model.category == 'Supervised' %}
+                                <option value="{{ key }}" {% if key == 'random_forest' %}selected{% endif %}>
+                                    {{ model.name }} - {{ model.description }}
+                                </option>
+                                {% endfor %}
+                            </optgroup>
+                            
+                            <optgroup label="🔍 Unsupervised Models">
+                                {% for key, model in models.items() if model.category == 'Unsupervised' %}
+                                <option value="{{ key }}">
+                                    {{ model.name }} - {{ model.description }}
+                                </option>
+                                {% endfor %}
+                            </optgroup>
+                            
+                            <!-- <optgroup label="🎯 Ensemble Models">
+                                {% for key, model in models.items() if model.category == 'Ensemble' %}
+                                <option value="{{ key }}">
+                                    {{ model.name }} - {{ model.description }}
+                                </option>
+                                {% endfor %}
+                            </optgroup> -->
+                            
+                            <optgroup label="🔀 Hybrid Models (0.7 RF + 0.3 Unsupervised)">
+                                {% for key, model in models.items() if model.category == 'Hybrid' %}
+                                <option value="{{ key }}">
+                                    {{ model.name }} - {{ model.description }}
+                                </option>
+                                {% endfor %}
+                            </optgroup>
+                        </select>
+                        <div class="form-text">
+                            <i class="bi bi-info-circle"></i> Choose the machine learning model for detection
+                        </div>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label for="file-input" class="form-label fw-bold">Select CSV File</label>
+                        <input class="form-control form-control-lg" type="file" id="file-input" 
+                               accept=".csv" required>
+                        <div class="form-text">
+                            <i class="bi bi-info-circle"></i> Supported formats: CSV (max 50MB)
+                        </div>
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-play-circle-fill"></i> Start Analysis
+                        </button>
+                    </div>
+                </form>
+                
+                <!-- Progress Section -->
+                <div id="progress-section" class="mt-4" style="display: none;">
+                    <h5><i class="bi bi-hourglass-split"></i> Analyzing...</h5>
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             role="progressbar" style="width: 100%"></div>
+                    </div>
+                </div>
+                
+                <!-- Results Section -->
+                <div id="results-section" class="mt-4" style="display: none;">
+                    <h4 class="mb-4"><i class="bi bi-check-circle-fill text-success"></i> Analysis Complete</h4>
+                    
+                    <!-- Model Used Info -->
+                    <div class="alert alert-info mb-4" id="model-info-alert">
+                        <i class="bi bi-cpu"></i> <strong>Model Used:</strong> <span id="model-used-name">-</span>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <h5 class="text-muted">Total Flows</h5>
+                                    <h2 id="result-total" class="mb-0">-</h2>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <h5 class="text-muted">Attacks Detected</h5>
+                                    <h2 id="result-attacks" class="mb-0 text-danger">-</h2>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <h6 class="text-muted">Accuracy</h6>
+                                    <h3 id="result-accuracy" class="mb-0 text-info">-</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <h6 class="text-muted">Recall</h6>
+                                    <h3 id="result-recall" class="mb-0 text-success">-</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <h6 class="text-muted">Precision</h6>
+                                    <h3 id="result-precision" class="mb-0 text-warning">-</h3>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div id="confusion-matrix" class="mt-4" style="display: none;">
+                        <h5>Confusion Matrix</h5>
+                        <table class="table table-bordered">
+                            <thead>
+                                <tr>
+                                    <th></th>
+                                    <th class="text-center">Predicted Normal</th>
+                                    <th class="text-center">Predicted Attack</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <th>Actual Normal</th>
+                                    <td class="text-center" id="tn-value">-</td>
+                                    <td class="text-center" id="fp-value">-</td>
+                                </tr>
+                                <tr>
+                                    <th>Actual Attack</th>
+                                    <td class="text-center" id="fn-value">-</td>
+                                    <td class="text-center" id="tp-value">-</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="mt-4">
+                        <a href="/dashboard" class="btn btn-success">
+                            <i class="bi bi-graph-up"></i> View Dashboard
+                        </a>
+                        <button class="btn btn-secondary" onclick="location.reload()">
+                            <i class="bi bi-arrow-repeat"></i> Analyze Another
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Error Section -->
+                <div id="error-section" class="mt-4 alert alert-danger" style="display: none;">
+                    <h5><i class="bi bi-exclamation-triangle-fill"></i> Error</h5>
+                    <p id="error-message"></p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Info Card -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-lightbulb-fill"></i> Tips</h5>
+            </div>
+            <div class="card-body">
+                <ul>
+                    <li>CSV file should contain network flow data with required features</li>
+                    <li>Expected columns: src_ip, dst_ip, src_port, dst_port, protocol, packets, bytes, etc.</li>
+                    <li>Label column (if present) should be named 'Label' with values 'arp_spoofing' or 'benign'</li>
+                    <li>Larger datasets may take longer to process</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    console.log('Analyze page script loaded');
+    
+    // Wait for DOM to be fully loaded
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeAnalyzePage);
+    } else {
+        initializeAnalyzePage();
+    }
+    
+    function initializeAnalyzePage() {
+        const uploadForm = document.getElementById('upload-form');
+        if (!uploadForm) {
+            console.error('Upload form not found!');
+            return;
+        }
+        
+        console.log('Upload form found, attaching event listener');
+        
+        uploadForm.addEventListener('submit', handleFormSubmit);
+    }
+    
+    async function handleFormSubmit(e) {
+        e.preventDefault();
+        console.log('Form submitted');
+        
+        const fileInput = document.getElementById('file-input');
+        const modelSelect = document.getElementById('model-select');
+        
+        if (!fileInput || !modelSelect) {
+            console.error('Required form elements not found');
+            alert('Form initialization error. Please reload the page.');
+            return;
+        }
+        
+        const file = fileInput.files[0];
+        const selectedModel = modelSelect.value;
+        
+        console.log('File:', file ? file.name : 'No file');
+        console.log('Model:', selectedModel);
+        
+        if (!file) {
+            alert('Please select a file');
+            return;
+        }
+        
+        // Get all sections (with null checks)
+        const resultsSection = document.getElementById('results-section');
+        const errorSection = document.getElementById('error-section');
+        const progressSection = document.getElementById('progress-section');
+        
+        // Hide previous results
+        if (resultsSection) resultsSection.style.display = 'none';
+        if (errorSection) errorSection.style.display = 'none';
+        if (progressSection) progressSection.style.display = 'block';
+        
+        // Create form data
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('model', selectedModel);
+        
+        console.log('Sending request to /api/upload...');
+        
+        try {
+            const response = await fetch('/api/upload', {
+                method: 'POST',
+                body: formData
+            });
+            
+            console.log('Response status:', response.status);
+            
+            const data = await response.json();
+            console.log('Response data:', data);
+            
+            // Hide progress
+            if (progressSection) progressSection.style.display = 'none';
+            
+            if (response.ok) {
+                console.log('Success! Showing results...');
+                
+                const stats = data.stats || data;
+                const confMatrix = data.confusion_matrix;
+                
+                // Show model used
+                if (stats.model_name) {
+                    const modelUsedName = document.getElementById('model-used-name');
+                    if (modelUsedName) {
+                        modelUsedName.textContent = stats.model_name;
+                    }
+                }
+                
+                // Show results
+                const resultTotal = document.getElementById('result-total');
+                const resultAttacks = document.getElementById('result-attacks');
+                
+                if (resultTotal && stats.total_flows !== undefined) {
+                    resultTotal.textContent = stats.total_flows.toLocaleString();
+                }
+                if (resultAttacks && stats.attacks_detected !== undefined) {
+                    resultAttacks.textContent = stats.attacks_detected.toLocaleString();
+                }
+                
+                if (stats.accuracy !== undefined) {
+                    const resultAccuracy = document.getElementById('result-accuracy');
+                    const resultRecall = document.getElementById('result-recall');
+                    const resultPrecision = document.getElementById('result-precision');
+                    
+                    if (resultAccuracy) resultAccuracy.textContent = stats.accuracy.toFixed(1) + '%';
+                    if (resultRecall) resultRecall.textContent = stats.recall.toFixed(1) + '%';
+                    if (resultPrecision) resultPrecision.textContent = stats.precision.toFixed(1) + '%';
+                    
+                    // Show confusion matrix
+                    if (confMatrix) {
+                        const confusionMatrix = document.getElementById('confusion-matrix');
+                        if (confusionMatrix) {
+                            confusionMatrix.style.display = 'block';
+                            
+                            const tpValue = document.getElementById('tp-value');
+                            const fpValue = document.getElementById('fp-value');
+                            const tnValue = document.getElementById('tn-value');
+                            const fnValue = document.getElementById('fn-value');
+                            
+                            if (tpValue && confMatrix.tp !== undefined) tpValue.textContent = confMatrix.tp.toLocaleString();
+                            if (fpValue && confMatrix.fp !== undefined) fpValue.textContent = confMatrix.fp.toLocaleString();
+                            if (tnValue && confMatrix.tn !== undefined) tnValue.textContent = confMatrix.tn.toLocaleString();
+                            if (fnValue && confMatrix.fn !== undefined) fnValue.textContent = confMatrix.fn.toLocaleString();
+                        }
+                    }
+                } else {
+                    const confusionMatrix = document.getElementById('confusion-matrix');
+                    if (confusionMatrix) confusionMatrix.style.display = 'none';
+                }
+                
+                if (resultsSection) resultsSection.style.display = 'block';
+            } else {
+                console.error('Error response:', data);
+                // Show error
+                const errorMessage = document.getElementById('error-message');
+                if (errorMessage) {
+                    errorMessage.textContent = data.error || 'Unknown error occurred';
+                }
+                if (errorSection) errorSection.style.display = 'block';
+            }
+        } catch (error) {
+            console.error('Fetch error:', error);
+            if (progressSection) progressSection.style.display = 'none';
+            
+            const errorMessage = document.getElementById('error-message');
+            if (errorMessage) {
+                errorMessage.textContent = 'Network error: ' + error.message;
+            }
+            if (errorSection) errorSection.style.display = 'block';
+        }
+    }
+</script>
+{% endblock %}

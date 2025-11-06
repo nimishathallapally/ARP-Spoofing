@@ -1,0 +1,588 @@
+{% extends "base.html" %}
+
+{% block title %}Real-Time Detection - ARP Spoofing Detection{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h2><i class="bi bi-broadcast"></i> Real-Time Detection Demo</h2>
+        <p class="text-muted">Simulate packet-by-packet detection with live visualization</p>
+    </div>
+</div>
+
+<!-- Configuration Section -->
+<div class="row mb-4">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0"><i class="bi bi-gear-fill"></i> Configuration</h4>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i> <strong>Note:</strong> You must run batch analysis first to load test data for simulation.
+                    <a href="/analyze" class="alert-link">Go to Analyze page</a>
+                </div>
+                
+                <!-- Session Check -->
+                <div class="mb-3">
+                    <button type="button" class="btn btn-sm btn-outline-info" onclick="checkSession()">
+                        <i class="bi bi-database"></i> Check Session Data
+                    </button>
+                    <div id="session-status" class="mt-2"></div>
+                </div>
+                
+                <form id="realtime-config-form">
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">
+                            <i class="bi bi-cpu"></i> Select Detection Model
+                        </label>
+                        <select class="form-select" id="model-select" required>
+                            <optgroup label="🌲 Supervised Models">
+                                {% for key, model in models.items() if model.category == 'Supervised' %}
+                                <option value="{{ key }}" {% if key == 'random_forest' %}selected{% endif %}>
+                                    {{ model.name }}
+                                </option>
+                                {% endfor %}
+                            </optgroup>
+                            <optgroup label="🔍 Unsupervised Models">
+                                {% for key, model in models.items() if model.category == 'Unsupervised' %}
+                                <option value="{{ key }}">
+                                    {{ model.name }}
+                                </option>
+                                {% endfor %}
+                            </optgroup>
+                            <optgroup label="🔀 Hybrid Models">
+                                {% for key, model in models.items() if model.category == 'Hybrid' %}
+                                <option value="{{ key }}">
+                                    {{ model.name }}
+                                </option>
+                                {% endfor %}
+                            </optgroup>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Number of Packets</label>
+                        <input type="number" class="form-control" id="packet-count" 
+                               value="100" min="10" max="500" required>
+                        <div class="form-text">Simulate detection for 10-500 packets</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Detection Speed</label>
+                        <select class="form-select" id="speed-select">
+                            <option value="50">Fast (50ms per packet)</option>
+                            <option value="100" selected>Normal (100ms per packet)</option>
+                            <option value="200">Slow (200ms per packet)</option>
+                            <option value="500">Very Slow (500ms per packet)</option>
+                        </select>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg" id="start-btn">
+                            <i class="bi bi-play-circle-fill"></i> Start Real-Time Detection
+                        </button>
+                        <button type="button" class="btn btn-danger" id="stop-btn" style="display: none;">
+                            <i class="bi bi-stop-circle-fill"></i> Stop Detection
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Detection Display Section -->
+<div class="row justify-content-center" id="detection-section" style="display: none;">
+    <div class="col-12 col-xl-10">
+        <div class="row">
+            <!-- Live Feed -->
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header bg-dark text-white">
+                        <h5 class="mb-0"><i class="bi bi-activity"></i> Live Detection Feed</h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="detection-feed" style="height: 500px; overflow-y: auto; background: #1a1a1a; color: #00ff00; font-family: 'Courier New', monospace; padding: 15px;">
+                            <div class="text-center text-muted py-5">
+                                <i class="bi bi-hourglass-split" style="font-size: 3rem;"></i>
+                                <p class="mt-3">Waiting for detection to start...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Statistics -->
+            <div class="col-md-6 mb-4">
+                <div class="card h-100">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0"><i class="bi bi-graph-up"></i> Live Statistics</h5>
+                    </div>
+                    <div class="card-body">
+                <!-- Progress -->
+                <div class="mb-4">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="fw-bold">Progress</span>
+                        <span id="progress-text">0 / 0 packets</span>
+                    </div>
+                    <div class="progress" style="height: 25px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             id="progress-bar" role="progressbar" style="width: 0%">
+                            <span id="progress-percent">0%</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Metrics Grid -->
+                <div class="row text-center mb-3">
+                    <div class="col-6 mb-3">
+                        <div class="border rounded p-3">
+                            <h6 class="text-muted small mb-1">Accuracy</h6>
+                            <h3 class="mb-0 text-primary" id="stat-accuracy">-</h3>
+                        </div>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <div class="border rounded p-3">
+                            <h6 class="text-muted small mb-1">Avg Confidence</h6>
+                            <h3 class="mb-0 text-info" id="stat-confidence">-</h3>
+                        </div>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <div class="border rounded p-3">
+                            <h6 class="text-muted small mb-1">Attacks Detected</h6>
+                            <h3 class="mb-0 text-danger" id="stat-attacks">0</h3>
+                        </div>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <div class="border rounded p-3">
+                            <h6 class="text-muted small mb-1">Normal Traffic</h6>
+                            <h3 class="mb-0 text-success" id="stat-normal">0</h3>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Alert Level Distribution -->
+                <div class="mb-3">
+                    <h6 class="fw-bold mb-2">Alert Level Distribution</h6>
+                    <div class="mb-2">
+                        <div class="d-flex justify-content-between small mb-1">
+                            <span><span class="badge bg-success">SAFE</span></span>
+                            <span id="alert-safe-count">0</span>
+                        </div>
+                        <div class="progress" style="height: 20px;">
+                            <div class="progress-bar bg-success" id="alert-safe-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <div class="d-flex justify-content-between small mb-1">
+                            <span><span class="badge bg-warning">MEDIUM</span></span>
+                            <span id="alert-medium-count">0</span>
+                        </div>
+                        <div class="progress" style="height: 20px;">
+                            <div class="progress-bar bg-warning" id="alert-medium-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <div class="d-flex justify-content-between small mb-1">
+                            <span><span class="badge bg-orange text-dark">HIGH</span></span>
+                            <span id="alert-high-count">0</span>
+                        </div>
+                        <div class="progress" style="height: 20px;">
+                            <div class="progress-bar" style="background: #ff8c00; width: 0%" id="alert-high-bar"></div>
+                        </div>
+                    </div>
+                    <div class="mb-2">
+                        <div class="d-flex justify-content-between small mb-1">
+                            <span><span class="badge bg-danger">CRITICAL</span></span>
+                            <span id="alert-critical-count">0</span>
+                        </div>
+                        <div class="progress" style="height: 20px;">
+                            <div class="progress-bar bg-danger" id="alert-critical-bar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Confusion Matrix -->
+                <div id="confusion-matrix-section" style="display: none;">
+                    <h6 class="fw-bold mb-2">Confusion Matrix</h6>
+                    <table class="table table-sm table-bordered text-center">
+                        <thead class="table-light">
+                            <tr>
+                                <th></th>
+                                <th>Pred Normal</th>
+                                <th>Pred Attack</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <th class="table-light">Actual Normal</th>
+                                <td id="cm-tn">0</td>
+                                <td id="cm-fp">0</td>
+                            </tr>
+                            <tr>
+                                <th class="table-light">Actual Attack</th>
+                                <td id="cm-fn">0</td>
+                                <td id="cm-tp">0</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Section -->
+<div class="row justify-content-center" id="summary-section" style="display: none;">
+    <div class="col-md-10 col-lg-8">
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h4 class="mb-0"><i class="bi bi-check-circle-fill"></i> Detection Complete</h4>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Total Packets</h6>
+                        <h2 id="summary-total">-</h2>
+                    </div>
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Accuracy</h6>
+                        <h2 id="summary-accuracy" class="text-primary">-</h2>
+                    </div>
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Precision</h6>
+                        <h2 id="summary-precision" class="text-info">-</h2>
+                    </div>
+                    <div class="col-md-3">
+                        <h6 class="text-muted">Recall</h6>
+                        <h2 id="summary-recall" class="text-success">-</h2>
+                    </div>
+                </div>
+                
+                <div class="mt-4 text-center">
+                    <button class="btn btn-primary" onclick="location.reload()">
+                        <i class="bi bi-arrow-repeat"></i> Run Another Simulation
+                    </button>
+                    <a href="/dashboard" class="btn btn-success">
+                        <i class="bi bi-graph-up"></i> View Dashboard
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let detectionInterval = null;
+let detectionResults = [];
+let isRunning = false;
+let isFetching = false;  // Prevent overlapping requests
+let totalPackets = 0;
+let currentPacket = 0;
+let detectionSpeed = 100;
+
+// Alert level colors
+const alertColors = {
+    'SAFE': '#28a745',
+    'MEDIUM': '#ffc107',
+    'HIGH': '#ff8c00',
+    'CRITICAL': '#dc3545'
+};
+
+// Check session data
+async function checkSession() {
+    const statusDiv = document.getElementById('session-status');
+    statusDiv.innerHTML = '<small class="text-muted">Checking session...</small>';
+    
+    try {
+        const response = await fetch('/api/session/check');
+        const data = await response.json();
+        
+        console.log('Session data:', data);
+        
+        let html = '<div class="alert alert-sm ';
+        if (data.has_test_data && data.test_data_samples > 0) {
+            html += 'alert-success">';
+            html += `<i class="bi bi-check-circle"></i> <strong>Session OK!</strong> `;
+            html += `Found ${data.test_data_samples} test samples ready for real-time detection. `;
+            html += `(Session ID: ${data.session_id})`;
+        } else {
+            html += 'alert-warning">';
+            html += `<i class="bi bi-exclamation-triangle"></i> <strong>No test data!</strong> `;
+            html += `Please run batch analysis first. `;
+            html += `<a href="/analyze" class="alert-link">Go to Analyze page</a>`;
+        }
+        html += '</div>';
+        
+        statusDiv.innerHTML = html;
+    } catch (error) {
+        statusDiv.innerHTML = `<div class="alert alert-danger alert-sm">Error checking session: ${error.message}</div>`;
+    }
+}
+
+document.getElementById('realtime-config-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    
+    const model = document.getElementById('model-select').value;
+    const packets = parseInt(document.getElementById('packet-count').value);
+    detectionSpeed = parseInt(document.getElementById('speed-select').value);
+    
+    console.log('Starting detection with:', {model, packets, detectionSpeed});
+    
+    // Initialize detection
+    try {
+        console.log('Sending request to /api/realtime/start...');
+        const response = await fetch('/api/realtime/start', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({model, packets})
+        });
+        
+        console.log('Response received:', response.status, response.statusText);
+        
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('Response data:', data);
+        
+        if (data.success) {
+            totalPackets = data.total_packets;
+            currentPacket = 0;
+            detectionResults = [];
+            
+            // Show detection section
+            document.getElementById('detection-section').style.display = 'block';
+            document.getElementById('summary-section').style.display = 'none';
+            
+            // Clear feed
+            const feed = document.getElementById('detection-feed');
+            feed.innerHTML = `<div style="color: #00ff00;">
+                <div>═══════════════════════════════════════════════════════</div>
+                <div>  Real-Time ARP Spoofing Detection</div>
+                <div>  Model: ${data.model_name}</div>
+                <div>  Total Packets: ${totalPackets}</div>
+                <div>═══════════════════════════════════════════════════════</div>
+                <div></div>
+            </div>`;
+            
+            // Update UI
+            document.getElementById('start-btn').style.display = 'none';
+            document.getElementById('stop-btn').style.display = 'block';
+            document.getElementById('progress-text').textContent = `0 / ${totalPackets} packets`;
+            
+            // Start detection
+            isRunning = true;
+            startDetection();
+        } else {
+            throw new Error(data.error || 'Unknown error occurred');
+        }
+    } catch (error) {
+        console.error('Detection error:', error);
+        alert('Failed to start detection: ' + error.message + '\n\nPlease ensure you have run batch analysis first (go to Analyze page and upload a dataset).');
+    }
+});
+
+document.getElementById('stop-btn').addEventListener('click', function() {
+    stopDetection();
+    showSummary();
+});
+
+async function startDetection() {
+    detectionInterval = setInterval(async () => {
+        // Prevent overlapping requests
+        if (isFetching) {
+            return;
+        }
+        
+        // Check if we should stop BEFORE making the API call
+        if (!isRunning || currentPacket >= totalPackets) {
+            stopDetection();
+            showSummary();
+            return;
+        }
+        
+        isFetching = true;
+        
+        try {
+            // Pass current packet index as query parameter
+            console.log(`Fetching packet ${currentPacket}...`);
+            const response = await fetch(`/api/realtime/next?index=${currentPacket}`);
+            console.log(`Response status: ${response.status} ${response.statusText}`);
+            
+            // Check if response is ok
+            if (!response.ok) {
+                let errorText = '';
+                try {
+                    errorText = await response.text();
+                } catch (e) {
+                    errorText = 'Could not read error response';
+                }
+                throw new Error(`Server error (${response.status}): ${errorText}`);
+            }
+            
+            const data = await response.json();
+            console.log(`Data received:`, data);
+            
+            // Check for error in response
+            if (!data.success) {
+                throw new Error(data.error || 'Unknown error from server');
+            }
+            
+            // Check again after response (async timing issue protection)
+            if (!isRunning || currentPacket >= totalPackets) {
+                isFetching = false;
+                return;
+            }
+            
+            if (!data.done) {
+                // Increment counter FIRST
+                currentPacket++;
+                
+                displayDetectionResult(data.result);
+                detectionResults.push(data.result);
+                updateStatistics();
+                
+                // Check if we've reached the limit
+                if (currentPacket >= totalPackets) {
+                    isFetching = false;
+                    stopDetection();
+                    showSummary();
+                    return;
+                }
+            } else {
+                isFetching = false;
+                stopDetection();
+                showSummary();
+                return;
+            }
+        } catch (error) {
+            console.error('Detection error:', error);
+            // Show error to user
+            const errorMsg = error.message || 'Unknown error occurred';
+            alert('Detection error: ' + errorMsg + '\n\nStopping detection. Please check the console for details.');
+            stopDetection();
+        } finally {
+            isFetching = false;
+        }
+    }, detectionSpeed);
+}
+
+function stopDetection() {
+    isRunning = false;
+    isFetching = false;  // Reset the fetching flag
+    if (detectionInterval) {
+        clearInterval(detectionInterval);
+        detectionInterval = null;
+    }
+    document.getElementById('start-btn').style.display = 'block';
+    document.getElementById('stop-btn').style.display = 'none';
+}
+
+function displayDetectionResult(result) {
+    const feed = document.getElementById('detection-feed');
+    const color = alertColors[result.alert_level];
+    const symbol = result.prediction === 'NORMAL' ? '✓' : '⚠';
+    const correctSymbol = result.correct ? '✓' : '✗';
+    
+    const line = `<div style="color: ${color}; padding: 2px 0;">
+        [${result.timestamp}] Packet #${String(result.packet_id).padStart(3, '0')}: ${symbol} ${result.prediction.padEnd(8)} 
+        [Confidence: ${(result.confidence * 100).toFixed(1).padStart(5)}%] 
+        [${result.alert_level.padEnd(8)}] 
+        <span style="color: ${result.correct ? '#00ff00' : '#ff0000'}">${correctSymbol}</span>
+    </div>`;
+    
+    feed.innerHTML += line;
+    feed.scrollTop = feed.scrollHeight;
+}
+
+function updateStatistics() {
+    // Progress
+    const progress = (currentPacket / totalPackets) * 100;
+    document.getElementById('progress-bar').style.width = progress + '%';
+    document.getElementById('progress-percent').textContent = progress.toFixed(0) + '%';
+    document.getElementById('progress-text').textContent = `${currentPacket} / ${totalPackets} packets`;
+    
+    if (detectionResults.length === 0) return;
+    
+    // Calculate metrics
+    const correct = detectionResults.filter(r => r.correct).length;
+    const accuracy = (correct / detectionResults.length) * 100;
+    const avgConf = detectionResults.reduce((sum, r) => sum + r.confidence, 0) / detectionResults.length * 100;
+    
+    const attacks = detectionResults.filter(r => r.prediction === 'ATTACK').length;
+    const normal = detectionResults.filter(r => r.prediction === 'NORMAL').length;
+    
+    // Update metrics
+    document.getElementById('stat-accuracy').textContent = accuracy.toFixed(1) + '%';
+    document.getElementById('stat-confidence').textContent = avgConf.toFixed(1) + '%';
+    document.getElementById('stat-attacks').textContent = attacks;
+    document.getElementById('stat-normal').textContent = normal;
+    
+    // Alert levels
+    const alertCounts = {SAFE: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0};
+    detectionResults.forEach(r => alertCounts[r.alert_level]++);
+    
+    Object.keys(alertCounts).forEach(level => {
+        const count = alertCounts[level];
+        const percent = (count / detectionResults.length) * 100;
+        document.getElementById(`alert-${level.toLowerCase()}-count`).textContent = count;
+        document.getElementById(`alert-${level.toLowerCase()}-bar`).style.width = percent + '%';
+    });
+    
+    // Confusion matrix
+    const tp = detectionResults.filter(r => r.prediction === 'ATTACK' && r.true_label === 'ATTACK').length;
+    const tn = detectionResults.filter(r => r.prediction === 'NORMAL' && r.true_label === 'NORMAL').length;
+    const fp = detectionResults.filter(r => r.prediction === 'ATTACK' && r.true_label === 'NORMAL').length;
+    const fn = detectionResults.filter(r => r.prediction === 'NORMAL' && r.true_label === 'ATTACK').length;
+    
+    document.getElementById('confusion-matrix-section').style.display = 'block';
+    document.getElementById('cm-tp').textContent = tp;
+    document.getElementById('cm-tn').textContent = tn;
+    document.getElementById('cm-fp').textContent = fp;
+    document.getElementById('cm-fn').textContent = fn;
+}
+
+function showSummary() {
+    if (detectionResults.length === 0) return;
+    
+    // Calculate final metrics
+    const correct = detectionResults.filter(r => r.correct).length;
+    const accuracy = (correct / detectionResults.length) * 100;
+    
+    const tp = detectionResults.filter(r => r.prediction === 'ATTACK' && r.true_label === 'ATTACK').length;
+    const tn = detectionResults.filter(r => r.prediction === 'NORMAL' && r.true_label === 'NORMAL').length;
+    const fp = detectionResults.filter(r => r.prediction === 'ATTACK' && r.true_label === 'NORMAL').length;
+    const fn = detectionResults.filter(r => r.prediction === 'NORMAL' && r.true_label === 'ATTACK').length;
+    
+    const precision = tp + fp > 0 ? (tp / (tp + fp)) * 100 : 0;
+    const recall = tp + fn > 0 ? (tp / (tp + fn)) * 100 : 0;
+    
+    // Update summary
+    document.getElementById('summary-total').textContent = detectionResults.length;
+    document.getElementById('summary-accuracy').textContent = accuracy.toFixed(1) + '%';
+    document.getElementById('summary-precision').textContent = precision.toFixed(1) + '%';
+    document.getElementById('summary-recall').textContent = recall.toFixed(1) + '%';
+    
+    // Show summary section
+    document.getElementById('summary-section').style.display = 'block';
+    
+    // Add completion message to feed
+    const feed = document.getElementById('detection-feed');
+    feed.innerHTML += `<div style="color: #00ff00; margin-top: 20px;">
+        <div>═══════════════════════════════════════════════════════</div>
+        <div>  DETECTION COMPLETE</div>
+        <div>  Accuracy: ${accuracy.toFixed(1)}% | Precision: ${precision.toFixed(1)}% | Recall: ${recall.toFixed(1)}%</div>
+        <div>═══════════════════════════════════════════════════════</div>
+    </div>`;
+    feed.scrollTop = feed.scrollHeight;
+}
+</script>
+{% endblock %}

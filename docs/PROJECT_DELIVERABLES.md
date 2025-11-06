@@ -5,7 +5,27 @@
 **Student Name:** Thallapally Nimisha<br>
 **Student ID:** CS22B1082<br>
 **Course:** Computer and Network Security <br>
-**Date:** October 2025  
+**Date:** November 2025  
+**Version:** 2.0 - Production Release
+
+---
+
+> **📚 COMPREHENSIVE TECHNICAL DOCUMENTATION:**  
+> For complete technical details with all performance metrics and visualizations, please refer to:
+> 
+> **[COMPLETE_TECHNICAL_DOCUMENTATION.md](COMPLETE_TECHNICAL_DOCUMENTATION.md)**
+> 
+> **What's included:**
+> - ✅ **All 14 Models** with complete confusion matrices
+> - ✅ **Detailed Metrics**: Accuracy, Precision, Recall, F1, TPR, TNR, FPR, FNR, ROC-AUC
+> - ✅ **Training & Testing Times** for each model
+> - ✅ **20+ Visualizations** from outputs/plots/ directory
+> - ✅ **Real-time Detection** architecture and implementation
+> - ✅ **Web Application** features and screenshots
+> - ✅ **Complete Project Timeline** with all updates and bug fixes
+> - ✅ **No code snippets** - focuses on results and visualizations
+> 
+> This deliverables document provides the course-required format and overview.
 
 ---
 

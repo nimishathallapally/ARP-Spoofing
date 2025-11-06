@@ -269,17 +269,14 @@ class ARPSpoofingDetector:
         """
         save_obj = joblib.load(filepath)
         
-        # Create detector instance
+        # Create detector instance (with backwards compatibility)
         detector = cls(
             model=save_obj['model'],
-            X_train_data=np.zeros((1, len(save_obj['feature_names']))),  # Dummy data
+            scaler=save_obj['scaler'],
             feature_names=save_obj['feature_names'],
             model_name=save_obj['model_name'],
-            alert_thresholds=save_obj['alert_thresholds']
+            alert_thresholds=save_obj.get('alert_thresholds', {})  # Default to empty dict if not present
         )
-        
-        # Replace scaler with loaded one
-        detector.scaler = save_obj['scaler']
         
         logger.info(f"Detector loaded from {filepath}")
         return detector

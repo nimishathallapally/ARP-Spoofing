@@ -580,6 +580,109 @@ class Visualizer:
         logger.info("ALL VISUALIZATIONS GENERATED SUCCESSFULLY")
         logger.info(f"Plots saved to: {self.output_dir}")
         logger.info("="*60 + "\n")
+    
+    def plot_all_confusion_matrices(self, performance_metrics: Dict, y_test: np.ndarray):
+        """
+        Plot confusion matrices for all models in a grid layout.
+        
+        Args:
+            performance_metrics: Dictionary of model metrics containing confusion matrices
+            y_test: True labels for test set
+        """
+        logger.info("Creating comprehensive confusion matrix grid...")
+        
+        # Filter out train metrics and get only test metrics
+        test_metrics = {k: v for k, v in performance_metrics.items() if not k.endswith('_train')}
+        
+        n_models = len(test_metrics)
+        n_cols = 3
+        n_rows = (n_models + n_cols - 1) // n_cols
+        
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 5 * n_rows))
+        if n_models == 1:
+            axes = [axes]
+        else:
+            axes = axes.flatten()
+        
+        for idx, (model_name, metrics) in enumerate(sorted(test_metrics.items())):
+            cm = metrics.get('confusion_matrix')
+            if cm is None:
+                continue
+            
+            # Plot confusion matrix
+            sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=axes[idx],
+                       cbar=False, square=True, linewidths=1, linecolor='gray')
+            
+            axes[idx].set_title(f'{model_name}\nAcc: {metrics["accuracy"]:.2%}, F1: {metrics["f1_score"]:.2%}',
+                              fontsize=11, fontweight='bold')
+            axes[idx].set_xlabel('Predicted', fontsize=10)
+            axes[idx].set_ylabel('Actual', fontsize=10)
+            axes[idx].set_xticklabels(['Normal', 'Attack'])
+            axes[idx].set_yticklabels(['Normal', 'Attack'])
+        
+        # Hide unused subplots
+        for idx in range(n_models, len(axes)):
+            axes[idx].axis('off')
+        
+        plt.suptitle('Confusion Matrices - All Models', fontsize=16, fontweight='bold', y=0.995)
+        plt.tight_layout()
+        
+        filepath = self.output_dir / 'all_confusion_matrices.png'
+        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        logger.info(f"✓ Saved: {filepath}")
+    
+    def plot_all_roc_curves(self, performance_metrics: Dict, y_test: np.ndarray):
+        """
+        Plot ROC curves for all models in a single figure.
+        
+        Args:
+            performance_metrics: Dictionary of model metrics containing y_proba
+            y_test: True test labels
+        """
+        logger.info("Creating comprehensive ROC curves plot...")
+        
+        from sklearn.metrics import roc_curve, auc
+        
+        plt.figure(figsize=(12, 8))
+        
+        # Filter out train metrics
+        test_metrics = {k: v for k, v in performance_metrics.items() if not k.endswith('_train')}
+        
+        colors = plt.cm.tab10(np.linspace(0, 1, len(test_metrics)))
+        
+        for idx, (model_name, metrics) in enumerate(sorted(test_metrics.items())):
+            y_proba = metrics.get('y_proba')
+            if y_proba is None or len(y_proba) == 0:
+                continue
+            
+            try:
+                fpr, tpr, _ = roc_curve(y_test, y_proba)
+                roc_auc = auc(fpr, tpr)
+                
+                plt.plot(fpr, tpr, color=colors[idx], lw=2, 
+                        label=f'{model_name} (AUC = {roc_auc:.3f})')
+            except Exception as e:
+                logger.warning(f"Could not plot ROC for {model_name}: {str(e)}")
+                continue
+        
+        # Plot diagonal line
+        plt.plot([0, 1], [0, 1], 'k--', lw=2, label='Random Classifier')
+        
+        plt.xlim([0.0, 1.0])
+        plt.ylim([0.0, 1.05])
+        plt.xlabel('False Positive Rate (FPR)', fontsize=12, fontweight='bold')
+        plt.ylabel('True Positive Rate (TPR)', fontsize=12, fontweight='bold')
+        plt.title('ROC Curves - All Models', fontsize=14, fontweight='bold')
+        plt.legend(loc="lower right", fontsize=9)
+        plt.grid(alpha=0.3)
+        
+        filepath = self.output_dir / 'all_roc_curves.png'
+        plt.savefig(filepath, dpi=300, bbox_inches='tight')
+        plt.close()
+        
+        logger.info(f"✓ Saved: {filepath}")
 
 
 if __name__ == "__main__":

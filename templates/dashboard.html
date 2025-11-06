@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - ARP Spoofing Detection{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h2><i class="bi bi-graph-up"></i> Detection Dashboard</h2>
+        <p class="text-muted">Analysis results and statistics</p>
+    </div>
+</div>
+
+<!-- Statistics Row -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card bg-primary text-white">
+            <div class="stat-value" id="total-analyzed">{{ stats.get('total_flows', 0) }}</div>
+            <div class="stat-label text-white">Total Flows</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card bg-danger text-white">
+            <div class="stat-value" id="attacks-detected">{{ stats.get('attacks_detected', 0) }}</div>
+            <div class="stat-label text-white">Attacks Detected</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card bg-success text-white">
+            <div class="stat-value" id="recall-rate">{{ "%.1f"|format(stats.get('recall', 0)) }}%</div>
+            <div class="stat-label text-white">Recall Rate</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card bg-info text-white">
+            <div class="stat-value" id="precision-rate">{{ "%.1f"|format(stats.get('precision', 0)) }}%</div>
+            <div class="stat-label text-white">Precision</div>
+        </div>
+    </div>
+</div>
+
+<!-- Charts Row -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-pie-chart-fill"></i> Detection Distribution</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="distributionChart"></canvas>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-bar-chart-fill"></i> Performance Metrics</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="metricsChart"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Detections -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> Top 50 Detections (Highest Probability)</h5>
+                <a href="/analyze" class="btn btn-sm btn-primary">
+                    <i class="bi bi-upload"></i> Analyze Another
+                </a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                    <table class="table table-hover mb-0" id="detections-table">
+                        <thead class="sticky-top bg-white">
+                            <tr>
+                                <th>#</th>
+                                <th>Timestamp</th>
+                                <th>Source IP</th>
+                                <th>Destination IP</th>
+                                <th>Probability</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="detections-body">
+                            {% if stats.get('detections') %}
+                                {% for detection in stats.detections[:50] %}
+                                <tr>
+                                    <td>{{ loop.index }}</td>
+                                    <td>{{ detection.timestamp }}</td>
+                                    <td><code>{{ detection.src_ip }}</code></td>
+                                    <td><code>{{ detection.dst_ip }}</code></td>
+                                    <td>
+                                        <div class="progress" style="min-width: 100px;">
+                                            <div class="progress-bar bg-danger" role="progressbar" 
+                                                 style="width: {{ (detection.probability * 100)|int }}%">
+                                                {{ "%.1f"|format(detection.probability * 100) }}%
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        {% if detection.probability > 0.5 %}
+                                            <span class="badge bg-danger">ATTACK</span>
+                                        {% else %}
+                                            <span class="badge bg-success">NORMAL</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            {% else %}
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted py-5">
+                                        <i class="bi bi-inbox" style="font-size: 3rem; opacity: 0.3;"></i>
+                                        <p class="mt-3">No detections yet. Upload a dataset to start analyzing.</p>
+                                    </td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Initialize charts
+    const distributionCtx = document.getElementById('distributionChart').getContext('2d');
+    const distributionChart = new Chart(distributionCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Attacks', 'Normal'],
+            datasets: [{
+                data: [{{ stats.get('attacks_detected', 0) }}, {{ stats.get('normal_flows', 0) }}],
+                backgroundColor: ['#e74c3c', '#27ae60'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+    
+    const metricsCtx = document.getElementById('metricsChart').getContext('2d');
+    const metricsChart = new Chart(metricsCtx, {
+        type: 'bar',
+        data: {
+            labels: ['Accuracy', 'Recall', 'Precision'],
+            datasets: [{
+                label: 'Performance (%)',
+                data: [{{ stats.get('accuracy', 0) }}, {{ stats.get('recall', 0) }}, {{ stats.get('precision', 0) }}],
+                backgroundColor: ['#3498db', '#27ae60', '#f39c12'],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}
