@@ -115,23 +115,30 @@ AVAILABLE_MODELS = {
     },
     
     # Hybrid Models (0.7 RF + 0.3 Unsupervised)
+    # These are computed on-the-fly, not loaded from pickle
     'hybrid_rf_if': {
         'name': 'Hybrid RF+IF',
-        'path': 'models/saved_models/hybrid_rf_if.pkl',
+        'supervised': 'random_forest',
+        'unsupervised': 'isolation_forest',
+        'weights': (0.7, 0.3),
         'description': '70% Random Forest + 30% Isolation Forest',
         'icon': 'plus-circle-fill',
         'category': 'Hybrid'
     },
     'hybrid_rf_svm': {
         'name': 'Hybrid RF+SVM',
-        'path': 'models/saved_models/hybrid_rf_svm.pkl',
+        'supervised': 'random_forest',
+        'unsupervised': 'one_class_svm',
+        'weights': (0.7, 0.3),
         'description': '70% Random Forest + 30% One-Class SVM',
         'icon': 'intersect',
         'category': 'Hybrid'
     },
     'hybrid_rf_lof': {
         'name': 'Hybrid RF+LOF',
-        'path': 'models/saved_models/hybrid_rf_lof.pkl',
+        'supervised': 'random_forest',
+        'unsupervised': 'lof',
+        'weights': (0.7, 0.3),
         'description': '70% Random Forest + 30% Local Outlier Factor',
         'icon': 'distribute-vertical',
         'category': 'Hybrid'
@@ -147,26 +154,128 @@ def load_specific_model(model_key):
         if not model_info:
             return False, f"Model '{model_key}' not found"
         
-        model_path = model_info['path']
+        # Check if it's a hybrid model
+        if 'supervised' in model_info:
+            # Hybrid model - load both components
+            sup_key = model_info['supervised']
+            unsup_key = model_info['unsupervised']
+            weights = model_info['weights']
+            
+            # Load supervised model
+            sup_info = AVAILABLE_MODELS.get(sup_key)
+            if not sup_info or not os.path.exists(sup_info['path']):
+                return False, f"Supervised model '{sup_key}' not found"
+            
+            with open(sup_info['path'], 'rb') as f:
+                sup_package = pickle.load(f)
+            
+            # Load unsupervised model
+            unsup_info = AVAILABLE_MODELS.get(unsup_key)
+            if not unsup_info or not os.path.exists(unsup_info['path']):
+                return False, f"Unsupervised model '{unsup_key}' not found"
+            
+            with open(unsup_info['path'], 'rb') as f:
+                unsup_package = pickle.load(f)
+            
+            # Create hybrid model wrapper
+            current_model = {
+                'type': 'hybrid',
+                'supervised': sup_package['model'],
+                'unsupervised': unsup_package['model'],
+                'weights': weights
+            }
+            current_scaler = sup_package['scaler']
+            current_feature_names = sup_package['feature_names']
+            
+            print(f"✓ Loaded hybrid model: {model_info['name']}")
+            print(f"  Supervised: {sup_info['name']}")
+            print(f"  Unsupervised: {unsup_info['name']}")
+            print(f"  Weights: {weights}")
+            
+        else:
+            # Regular model - load from pickle
+            model_path = model_info['path']
+            
+            if not os.path.exists(model_path):
+                return False, f"Model file not found: {model_path}"
+            
+            # Load the packaged model
+            with open(model_path, 'rb') as f:
+                package = pickle.load(f)
+            
+            current_model = package['model']
+            current_scaler = package['scaler']
+            current_feature_names = package['feature_names']
+            
+            print(f"✓ Loaded model: {model_info['name']}")
         
-        if not os.path.exists(model_path):
-            return False, f"Model file not found: {model_path}"
-        
-        # Load the packaged model
-        with open(model_path, 'rb') as f:
-            package = pickle.load(f)
-        
-        current_model = package['model']
-        current_scaler = package['scaler']
-        current_feature_names = package['feature_names']
-        
-        print(f"✓ Loaded model: {model_info['name']}")
         print(f"  Features: {len(current_feature_names)}")
         
         return True, model_info['name']
         
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return False, f"Error loading model: {str(e)}"
+
+def predict_with_model(model, X):
+    """Make predictions - handles both regular and hybrid models"""
+    if isinstance(model, dict) and model.get('type') == 'hybrid':
+        # Hybrid model prediction
+        sup_model = model['supervised']
+        unsup_model = model['unsupervised']
+        weights = model['weights']
+        
+        # Get supervised predictions
+        if hasattr(sup_model, 'predict_proba'):
+            sup_pred = sup_model.predict_proba(X)[:, 1]
+        else:
+            sup_pred = sup_model.predict(X).astype(float)
+        
+        # Get unsupervised predictions
+        unsup_pred_raw = unsup_model.predict(X)
+        # Convert -1 (outlier/attack) to 1, 1 (normal) to 0
+        unsup_pred = np.where(unsup_pred_raw == -1, 1, 0).astype(float)
+        
+        # Weighted combination
+        weighted_score = (weights[0] * sup_pred) + (weights[1] * unsup_pred)
+        return (weighted_score >= 0.5).astype(int)
+    else:
+        # Regular model prediction
+        return model.predict(X)
+
+def predict_proba_with_model(model, X):
+    """Get prediction probabilities - handles both regular and hybrid models"""
+    if isinstance(model, dict) and model.get('type') == 'hybrid':
+        # Hybrid model probabilities
+        sup_model = model['supervised']
+        unsup_model = model['unsupervised']
+        weights = model['weights']
+        
+        # Get supervised probabilities
+        if hasattr(sup_model, 'predict_proba'):
+            sup_proba = sup_model.predict_proba(X)[:, 1]
+        else:
+            sup_pred = sup_model.predict(X)
+            sup_proba = np.where(sup_pred == 1, 0.8, 0.2)
+        
+        # Get unsupervised predictions
+        unsup_pred_raw = unsup_model.predict(X)
+        unsup_pred = np.where(unsup_pred_raw == -1, 1, 0).astype(float)
+        
+        # Weighted combination for probabilities
+        weighted_proba = (weights[0] * sup_proba) + (weights[1] * unsup_pred)
+        
+        # Return as probability matrix
+        return np.column_stack([1 - weighted_proba, weighted_proba])
+    else:
+        # Regular model probabilities
+        if hasattr(model, 'predict_proba'):
+            return model.predict_proba(X)
+        else:
+            # No probabilities available, use binary predictions
+            pred = model.predict(X)
+            return np.column_stack([1 - pred, pred])
 
 @app.route('/')
 def index():
@@ -275,35 +384,19 @@ def upload_file():
         # Make predictions with optimal threshold
         OPTIMAL_THRESHOLD = 0.4  # Based on test results from test_uq_dataset.py
         
-        # Get prediction probabilities (if available)
-        if hasattr(current_model, 'predict_proba'):
-            try:
-                y_proba = current_model.predict_proba(X_scaled)[:, 1]
-                # Use optimal threshold instead of default 0.5
-                y_pred_binary = (y_proba >= OPTIMAL_THRESHOLD).astype(int)
-            except:
-                y_pred = current_model.predict(X_scaled)
-                y_proba = np.abs(y_pred)
-                y_pred_binary = y_pred
-        elif hasattr(current_model, 'decision_function'):
-            try:
-                decision = current_model.decision_function(X_scaled)
-                y_proba = (decision - decision.min()) / (decision.max() - decision.min())
-                y_pred = current_model.predict(X_scaled)
-                y_pred_binary = y_pred
-            except:
-                y_pred = current_model.predict(X_scaled)
-                y_proba = np.abs(y_pred)
-                y_pred_binary = y_pred
-        else:
-            y_pred = current_model.predict(X_scaled)
-            y_proba = np.abs(y_pred)
-            y_pred_binary = y_pred
-        
-        # For unsupervised models, convert -1 to 1 (attack) and 1 to 0 (normal)
-        if hasattr(current_model, 'predict') and not hasattr(current_model, 'predict_proba'):
+        # Get prediction probabilities using helper function
+        try:
+            y_proba_matrix = predict_proba_with_model(current_model, X_scaled)
+            y_proba = y_proba_matrix[:, 1]
+            # Use optimal threshold instead of default 0.5
+            y_pred_binary = (y_proba >= OPTIMAL_THRESHOLD).astype(int)
+        except:
+            # Fallback to regular predictions
+            y_pred_binary = predict_with_model(current_model, X_scaled)
+            # For unsupervised models, convert -1 to 1 (attack) and 1 to 0 (normal)
             if -1 in y_pred_binary:
                 y_pred_binary = np.where(y_pred_binary == -1, 1, 0)
+            y_proba = np.abs(y_pred_binary).astype(float)
         
         # Calculate metrics
         total_flows = len(y_pred_binary)
@@ -445,7 +538,7 @@ def check_session():
 
 @app.route('/api/realtime/start', methods=['POST'])
 def start_realtime_detection():
-    """Start real-time detection simulation"""
+    """Start real-time detection simulation - Process all packets like detect_realtime.py"""
     global current_model, current_scaler, current_feature_names
     
     print("=== Real-time detection start request received ===")
@@ -513,25 +606,144 @@ def start_realtime_detection():
         if n_packets > total_available:
             n_packets = total_available
         
-        indices = list(np.random.choice(total_available, size=n_packets, replace=False))
-        # Convert numpy int64 to Python int (for JSON serialization)
-        indices = [int(i) for i in indices]
+        # Select random packets
+        indices = np.random.choice(total_available, size=n_packets, replace=False)
         
-        # Store simulation config in session (no current_index - managed client-side)
-        session['realtime_config'] = {
-            'model_key': model_key,
-            'model_name': AVAILABLE_MODELS[model_key]['name'],
-            'n_packets': int(n_packets),  # Ensure int, not numpy int64
-            'indices': indices,
-            'started_at': datetime.now().isoformat()
+        X_test = test_data['X'][indices]
+        y_test = test_data['y'][indices]
+        
+        # Process ALL packets at once (like detect_realtime.py)
+        print(f"\n{'='*60}")
+        print(f"Processing {n_packets} packets for real-time detection...")
+        print(f"{'='*60}\n")
+        
+        # Make predictions on all packets
+        OPTIMAL_THRESHOLD = 0.4
+        
+        all_results = []
+        predictions = []
+        confidences = []
+        
+        for i in range(n_packets):
+            packet_features = X_test[i].reshape(1, -1)
+            true_label = int(y_test[i])
+            
+            # Make prediction using helper function
+            try:
+                y_proba_matrix = predict_proba_with_model(current_model, packet_features)
+                confidence = float(y_proba_matrix[0][1])  # Probability of attack
+                prediction = 1 if confidence >= OPTIMAL_THRESHOLD else 0
+            except:
+                # Fallback to binary prediction
+                y_pred = predict_with_model(current_model, packet_features)
+                prediction = 1 if y_pred[0] == -1 or y_pred[0] == 1 else 0
+                # For unsupervised: -1 = attack (1), 1 = normal (0)
+                if y_pred[0] == -1:
+                    prediction = 1
+                    confidence = 0.8
+                elif y_pred[0] == 1:
+                    prediction = 0
+                    confidence = 0.2
+                else:
+                    prediction = int(y_pred[0])
+                    confidence = 0.8 if prediction == 1 else 0.2
+            
+            # Determine alert level
+            if confidence < 0.3:
+                alert_level = 'SAFE'
+            elif confidence < 0.6:
+                alert_level = 'MEDIUM'
+            elif confidence < 0.8:
+                alert_level = 'HIGH'
+            else:
+                alert_level = 'CRITICAL'
+            
+            result = {
+                'packet_id': i + 1,
+                'prediction': 'ATTACK' if prediction == 1 else 'NORMAL',
+                'true_label': 'ATTACK' if true_label == 1 else 'NORMAL',
+                'correct': prediction == true_label,
+                'confidence': confidence,
+                'alert_level': alert_level,
+                'timestamp': datetime.now().strftime('%H:%M:%S.%f')[:-3]
+            }
+            
+            all_results.append(result)
+            predictions.append(prediction)
+            confidences.append(confidence)
+        
+        # Calculate comprehensive statistics
+        predictions = np.array(predictions)
+        confidences = np.array(confidences)
+        
+        total = len(predictions)
+        correct = sum(1 for r in all_results if r['correct'])
+        accuracy = correct / total if total > 0 else 0
+        
+        tp = sum(1 for r in all_results if r['prediction'] == 'ATTACK' and r['true_label'] == 'ATTACK')
+        tn = sum(1 for r in all_results if r['prediction'] == 'NORMAL' and r['true_label'] == 'NORMAL')
+        fp = sum(1 for r in all_results if r['prediction'] == 'ATTACK' and r['true_label'] == 'NORMAL')
+        fn = sum(1 for r in all_results if r['prediction'] == 'NORMAL' and r['true_label'] == 'ATTACK')
+        
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+        fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
+        
+        # Alert level counts
+        alert_counts = {}
+        for r in all_results:
+            level = r['alert_level']
+            alert_counts[level] = alert_counts.get(level, 0) + 1
+        
+        # Generate visualization (like detect_realtime.py)
+        plot_filename = generate_realtime_plot(
+            all_results, 
+            y_test, 
+            predictions, 
+            confidences,
+            AVAILABLE_MODELS[model_key]['name'],
+            session_id
+        )
+        
+        # Prepare comprehensive statistics
+        stats = {
+            'total_packets': total,
+            'correct_predictions': correct,
+            'accuracy': round(accuracy * 100, 2),
+            'precision': round(precision * 100, 2),
+            'recall': round(recall * 100, 2),
+            'f1_score': round(f1 * 100, 2),
+            'fpr': round(fpr * 100, 2),
+            'confusion_matrix': {
+                'tp': tp, 'tn': tn, 'fp': fp, 'fn': fn
+            },
+            'alert_counts': alert_counts,
+            'avg_confidence': round(np.mean(confidences) * 100, 1),
+            'plot_url': f'/static/plots/{plot_filename}' if plot_filename else None
         }
-        session.modified = True  # Force session save
+        
+        # Store results in session
+        session['realtime_results'] = all_results
+        session['realtime_stats'] = stats
+        session['realtime_model'] = AVAILABLE_MODELS[model_key]['name']
+        session.modified = True
+        
+        print(f"\n{'='*60}")
+        print(f"Real-time Detection Complete!")
+        print(f"Accuracy: {stats['accuracy']:.2f}%")
+        print(f"Precision: {stats['precision']:.2f}%")
+        print(f"Recall: {stats['recall']:.2f}%")
+        print(f"F1-Score: {stats['f1_score']:.2f}%")
+        print(f"{'='*60}\n")
         
         return jsonify({
             'success': True,
             'model_name': AVAILABLE_MODELS[model_key]['name'],
             'total_packets': n_packets,
-            'message': f'Real-time simulation initialized with {n_packets} packets'
+            'stats': stats,
+            'results': all_results,  # Send all results at once
+            'message': f'Processed all {n_packets} packets successfully'
         })
         
     except Exception as e:
@@ -540,142 +752,160 @@ def start_realtime_detection():
         traceback.print_exc()
         return jsonify({'success': False, 'error': str(e)}), 500
 
-@app.route('/api/realtime/next', methods=['GET'])
-def get_next_packet():
-    """Get next packet detection result"""
-    global current_model, current_scaler, current_feature_names
-    
+def generate_realtime_plot(results, y_true, y_pred, confidences, model_name, session_id):
+    """Generate comprehensive real-time detection plot (like detect_realtime.py)"""
     try:
-        if 'realtime_config' not in session or 'session_id' not in session:
-            return jsonify({'success': False, 'error': 'Simulation not initialized'}), 400
+        import matplotlib
+        matplotlib.use('Agg')  # Use non-interactive backend
+        import matplotlib.pyplot as plt
+        from matplotlib.gridspec import GridSpec
         
-        config = session['realtime_config']
+        # Create figure with subplots (similar to detect_realtime.py)
+        fig = plt.figure(figsize=(16, 12))
+        gs = GridSpec(3, 2, figure=fig, hspace=0.3, wspace=0.3)
         
-        # Get packet index from query parameter instead of session
-        packet_idx = request.args.get('index', type=int)
-        if packet_idx is None:
-            return jsonify({'success': False, 'error': 'Packet index required'}), 400
+        # 1. Prediction Timeline
+        ax1 = fig.add_subplot(gs[0, :])
+        packet_ids = [r['packet_id'] for r in results]
         
-        if packet_idx >= config['n_packets']:
-            return jsonify({'success': True, 'done': True, 'message': 'All packets processed'})
+        # Color code by correctness
+        colors = ['green' if r['correct'] else 'red' for r in results]
+        ax1.scatter(packet_ids, confidences, c=colors, alpha=0.6, s=50)
+        ax1.axhline(y=0.4, color='orange', linestyle='--', label='Threshold (0.4)')
+        ax1.axhline(y=0.5, color='gray', linestyle=':', alpha=0.5, label='Default (0.5)')
+        ax1.set_xlabel('Packet ID', fontsize=12)
+        ax1.set_ylabel('Attack Confidence', fontsize=12)
+        ax1.set_title(f'Real-Time Detection Timeline - {model_name}', fontsize=14, fontweight='bold')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
         
-        # Reload model if needed (in case it was lost)
-        if current_model is None:
-            model_key = config['model_key']
-            success, message = load_specific_model(model_key)
-            if not success:
-                return jsonify({'success': False, 'error': f'Model reload failed: {message}'}), 500
-        
-        # Load test data from file
-        session_id = session['session_id']
-        test_data_file = os.path.join(app.config['SESSION_FOLDER'], f'test_data_{session_id}.pkl')
-        
-        if not os.path.exists(test_data_file):
-            return jsonify({'success': False, 'error': 'Test data file not found'}), 400
-        
-        with open(test_data_file, 'rb') as f:
-            test_data = pickle.load(f)
-        
-        # Get the actual data index
-        data_idx = config['indices'][packet_idx]
-        
-        # Get test data
-        X_test = test_data['X']
-        y_test = test_data['y']
-        
-        # Get single packet
-        packet_features = X_test[data_idx].reshape(1, -1)
-        true_label = int(y_test[data_idx])
-        
-        # Make prediction
-        if hasattr(current_model, 'predict_proba'):
-            y_proba = current_model.predict_proba(current_scaler.transform(packet_features))
-            confidence = float(y_proba[0][1])  # Probability of attack
-            
-            # Use optimal threshold
-            OPTIMAL_THRESHOLD = 0.4
-            prediction = 1 if confidence >= OPTIMAL_THRESHOLD else 0
-        else:
-            # For unsupervised models
-            y_pred = current_model.predict(current_scaler.transform(packet_features))
-            prediction = 1 if y_pred[0] == -1 else 0  # -1 means anomaly/attack
-            confidence = 0.8 if prediction == 1 else 0.2
-        
-        # Determine alert level
-        if confidence < 0.3:
-            alert_level = 'SAFE'
-        elif confidence < 0.6:
-            alert_level = 'MEDIUM'
-        elif confidence < 0.8:
-            alert_level = 'HIGH'
-        else:
-            alert_level = 'CRITICAL'
-        
-        # Create result
-        result = {
-            'packet_id': packet_idx + 1,
-            'prediction': 'ATTACK' if prediction == 1 else 'NORMAL',
-            'true_label': 'ATTACK' if true_label == 1 else 'NORMAL',
-            'correct': prediction == true_label,
-            'confidence': confidence,
-            'alert_level': alert_level,
-            'timestamp': datetime.now().strftime('%H:%M:%S.%f')[:-3]
-        }
-        
-        # No need to update session - index is managed client-side
-        return jsonify({'success': True, 'done': False, 'result': result})
-        
-    except Exception as e:
-        print(f"Error in real-time detection: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/realtime/stats', methods=['GET'])
-def get_realtime_stats():
-    """Get current real-time detection statistics"""
-    try:
-        if 'realtime_results' not in session:
-            return jsonify({'success': False, 'error': 'No results available'}), 400
-        
-        results = session['realtime_results']
-        
-        if not results:
-            return jsonify({'success': True, 'stats': None})
-        
-        # Calculate statistics
-        total = len(results)
-        correct = sum(1 for r in results if r['correct'])
-        accuracy = correct / total if total > 0 else 0
-        
+        # 2. Confusion Matrix Heatmap
+        ax2 = fig.add_subplot(gs[1, 0])
         tp = sum(1 for r in results if r['prediction'] == 'ATTACK' and r['true_label'] == 'ATTACK')
         tn = sum(1 for r in results if r['prediction'] == 'NORMAL' and r['true_label'] == 'NORMAL')
         fp = sum(1 for r in results if r['prediction'] == 'ATTACK' and r['true_label'] == 'NORMAL')
         fn = sum(1 for r in results if r['prediction'] == 'NORMAL' and r['true_label'] == 'ATTACK')
         
-        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
-        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
-        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+        cm = np.array([[tn, fp], [fn, tp]])
+        im = ax2.imshow(cm, interpolation='nearest', cmap='Blues')
+        ax2.set_xticks([0, 1])
+        ax2.set_yticks([0, 1])
+        ax2.set_xticklabels(['Normal', 'Attack'])
+        ax2.set_yticklabels(['Normal', 'Attack'])
+        ax2.set_xlabel('Predicted', fontsize=12)
+        ax2.set_ylabel('Actual', fontsize=12)
+        ax2.set_title('Confusion Matrix', fontsize=13, fontweight='bold')
         
-        # Alert level counts
+        # Add text annotations
+        for i in range(2):
+            for j in range(2):
+                text = ax2.text(j, i, cm[i, j], ha="center", va="center", 
+                              color="white" if cm[i, j] > cm.max()/2 else "black",
+                              fontsize=16, fontweight='bold')
+        
+        # 3. Alert Level Distribution
+        ax3 = fig.add_subplot(gs[1, 1])
         alert_counts = {}
         for r in results:
             level = r['alert_level']
             alert_counts[level] = alert_counts.get(level, 0) + 1
         
-        stats = {
-            'total_packets': total,
-            'accuracy': round(accuracy * 100, 1),
-            'precision': round(precision * 100, 1),
-            'recall': round(recall * 100, 1),
-            'f1_score': round(f1 * 100, 1),
-            'confusion_matrix': {
-                'tp': tp, 'tn': tn, 'fp': fp, 'fn': fn
-            },
-            'alert_counts': alert_counts,
-            'avg_confidence': round(np.mean([r['confidence'] for r in results]) * 100, 1)
-        }
+        levels = ['SAFE', 'MEDIUM', 'HIGH', 'CRITICAL']
+        counts = [alert_counts.get(level, 0) for level in levels]
+        colors_bar = ['green', 'yellow', 'orange', 'red']
         
+        bars = ax3.bar(levels, counts, color=colors_bar, alpha=0.7, edgecolor='black')
+        ax3.set_ylabel('Count', fontsize=12)
+        ax3.set_title('Alert Level Distribution', fontsize=13, fontweight='bold')
+        ax3.grid(True, axis='y', alpha=0.3)
+        
+        # Add value labels on bars
+        for bar in bars:
+            height = bar.get_height()
+            if height > 0:
+                ax3.text(bar.get_x() + bar.get_width()/2., height,
+                        f'{int(height)}', ha='center', va='bottom', fontweight='bold')
+        
+        # 4. Confidence Distribution
+        ax4 = fig.add_subplot(gs[2, 0])
+        ax4.hist(confidences, bins=20, color='steelblue', alpha=0.7, edgecolor='black')
+        ax4.axvline(x=0.4, color='red', linestyle='--', linewidth=2, label='Threshold')
+        ax4.set_xlabel('Confidence Score', fontsize=12)
+        ax4.set_ylabel('Frequency', fontsize=12)
+        ax4.set_title('Confidence Score Distribution', fontsize=13, fontweight='bold')
+        ax4.legend()
+        ax4.grid(True, alpha=0.3)
+        
+        # 5. Performance Metrics Table
+        ax5 = fig.add_subplot(gs[2, 1])
+        ax5.axis('off')
+        
+        accuracy = sum(1 for r in results if r['correct']) / len(results)
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0
+        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+        fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
+        
+        metrics_data = [
+            ['Metric', 'Value'],
+            ['Accuracy', f'{accuracy*100:.2f}%'],
+            ['Precision', f'{precision*100:.2f}%'],
+            ['Recall', f'{recall*100:.2f}%'],
+            ['F1-Score', f'{f1*100:.2f}%'],
+            ['False Positive Rate', f'{fpr*100:.2f}%'],
+            ['Total Packets', f'{len(results)}'],
+            ['Correct', f'{sum(1 for r in results if r["correct"])}'],
+            ['Incorrect', f'{sum(1 for r in results if not r["correct"])}']
+        ]
+        
+        table = ax5.table(cellText=metrics_data, cellLoc='left', loc='center',
+                         colWidths=[0.5, 0.5])
+        table.auto_set_font_size(False)
+        table.set_fontsize(11)
+        table.scale(1, 2)
+        
+        # Style header row
+        for i in range(2):
+            table[(0, i)].set_facecolor('#4472C4')
+            table[(0, i)].set_text_props(weight='bold', color='white')
+        
+        # Alternate row colors
+        for i in range(1, len(metrics_data)):
+            for j in range(2):
+                if i % 2 == 0:
+                    table[(i, j)].set_facecolor('#E7E6E6')
+        
+        ax5.set_title('Performance Metrics', fontsize=13, fontweight='bold', pad=20)
+        
+        # Save plot
+        plots_dir = os.path.join('static', 'plots')
+        os.makedirs(plots_dir, exist_ok=True)
+        
+        plot_filename = f'realtime_{session_id}_{datetime.now().strftime("%Y%m%d%H%M%S")}.png'
+        plot_path = os.path.join(plots_dir, plot_filename)
+        
+        plt.savefig(plot_path, dpi=100, bbox_inches='tight')
+        plt.close()
+        
+        print(f"✓ Plot saved: {plot_path}")
+        return plot_filename
+        
+    except Exception as e:
+        print(f"Error generating plot: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
+
+@app.route('/api/realtime/stats', methods=['GET'])
+def get_realtime_stats():
+    """Get current real-time detection statistics"""
+    try:
+        if 'realtime_stats' not in session:
+            return jsonify({'success': False, 'error': 'No results available. Please run detection first.'}), 400
+        
+        stats = session['realtime_stats']
         return jsonify({'success': True, 'stats': stats})
         
     except Exception as e:
@@ -695,7 +925,17 @@ if __name__ == '__main__':
     print("=" * 60)
     print(f"Available models: {len(AVAILABLE_MODELS)}")
     for key, info in AVAILABLE_MODELS.items():
-        status = "✓" if os.path.exists(info['path']) else "✗"
+        # Check if it's a hybrid model
+        if 'supervised' in info:
+            # Hybrid model - check if component models exist
+            sup_info = AVAILABLE_MODELS.get(info['supervised'], {})
+            unsup_info = AVAILABLE_MODELS.get(info['unsupervised'], {})
+            sup_exists = os.path.exists(sup_info.get('path', ''))
+            unsup_exists = os.path.exists(unsup_info.get('path', ''))
+            status = "✓" if (sup_exists and unsup_exists) else "✗"
+        else:
+            # Regular model - check path
+            status = "✓" if os.path.exists(info.get('path', '')) else "✗"
         print(f"  {status} {info['name']} ({info['category']})")
     print("=" * 60)
     print("Starting Flask server...")

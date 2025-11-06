@@ -278,13 +278,12 @@
 
 {% block extra_js %}
 <script>
-let detectionInterval = null;
 let detectionResults = [];
-let isRunning = false;
-let isFetching = false;  // Prevent overlapping requests
 let totalPackets = 0;
-let currentPacket = 0;
-let detectionSpeed = 100;
+let currentDisplayIndex = 0;
+let displayInterval = null;
+let isDisplaying = false;
+let displaySpeed = 100;
 
 // Alert level colors
 const alertColors = {
@@ -328,13 +327,33 @@ async function checkSession() {
 document.getElementById('realtime-config-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     
+    console.log('Form submitted!');
+    
     const model = document.getElementById('model-select').value;
     const packets = parseInt(document.getElementById('packet-count').value);
-    detectionSpeed = parseInt(document.getElementById('speed-select').value);
+    displaySpeed = parseInt(document.getElementById('speed-select').value);
     
-    console.log('Starting detection with:', {model, packets, detectionSpeed});
+    console.log('Starting detection with:', {model, packets, displaySpeed});
     
-    // Initialize detection
+    // Show loading state
+    const startBtn = document.getElementById('start-btn');
+    startBtn.disabled = true;
+    startBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...';
+    
+    // Show detection section
+    document.getElementById('detection-section').style.display = 'block';
+    document.getElementById('summary-section').style.display = 'none';
+    
+    const feed = document.getElementById('detection-feed');
+    feed.innerHTML = `<div style="color: #00ff00;">
+        <div>═══════════════════════════════════════════════════════</div>
+        <div>  Real-Time ARP Spoofing Detection</div>
+        <div>  Processing ${packets} packets...</div>
+        <div>═══════════════════════════════════════════════════════</div>
+        <div></div>
+    </div>`;
+    
+    // Process all packets at once (like detect_realtime.py)
     try {
         console.log('Sending request to /api/realtime/start...');
         const response = await fetch('/api/realtime/start', {
@@ -354,16 +373,12 @@ document.getElementById('realtime-config-form').addEventListener('submit', async
         console.log('Response data:', data);
         
         if (data.success) {
+            // All packets have been processed!
+            detectionResults = data.results;  // Get all results at once
             totalPackets = data.total_packets;
-            currentPacket = 0;
-            detectionResults = [];
+            currentDisplayIndex = 0;
             
-            // Show detection section
-            document.getElementById('detection-section').style.display = 'block';
-            document.getElementById('summary-section').style.display = 'none';
-            
-            // Clear feed
-            const feed = document.getElementById('detection-feed');
+            // Update feed header
             feed.innerHTML = `<div style="color: #00ff00;">
                 <div>═══════════════════════════════════════════════════════</div>
                 <div>  Real-Time ARP Spoofing Detection</div>
@@ -373,114 +388,66 @@ document.getElementById('realtime-config-form').addEventListener('submit', async
                 <div></div>
             </div>`;
             
-            // Update UI
+            // Show stats if available
+            if (data.stats && data.stats.plot_url) {
+                // Display comprehensive plot
+                showComprehensivePlot(data.stats.plot_url);
+            }
+            
+            // Reset UI
+            startBtn.disabled = false;
+            startBtn.innerHTML = '<i class="bi bi-play-circle-fill"></i> Start Real-Time Detection';
             document.getElementById('start-btn').style.display = 'none';
             document.getElementById('stop-btn').style.display = 'block';
-            document.getElementById('progress-text').textContent = `0 / ${totalPackets} packets`;
             
-            // Start detection
-            isRunning = true;
-            startDetection();
+            // Start animated display
+            isDisplaying = true;
+            startAnimatedDisplay();
         } else {
             throw new Error(data.error || 'Unknown error occurred');
         }
     } catch (error) {
         console.error('Detection error:', error);
         alert('Failed to start detection: ' + error.message + '\n\nPlease ensure you have run batch analysis first (go to Analyze page and upload a dataset).');
+        
+        // Reset button
+        startBtn.disabled = false;
+        startBtn.innerHTML = '<i class="bi bi-play-circle-fill"></i> Start Real-Time Detection';
     }
 });
 
 document.getElementById('stop-btn').addEventListener('click', function() {
-    stopDetection();
+    stopDisplay();
+    // Skip to end
+    currentDisplayIndex = totalPackets;
+    updateStatistics();
     showSummary();
 });
 
-async function startDetection() {
-    detectionInterval = setInterval(async () => {
-        // Prevent overlapping requests
-        if (isFetching) {
-            return;
-        }
-        
-        // Check if we should stop BEFORE making the API call
-        if (!isRunning || currentPacket >= totalPackets) {
-            stopDetection();
+function startAnimatedDisplay() {
+    displayInterval = setInterval(() => {
+        if (!isDisplaying || currentDisplayIndex >= totalPackets) {
+            stopDisplay();
             showSummary();
             return;
         }
         
-        isFetching = true;
+        // Display next result
+        const result = detectionResults[currentDisplayIndex];
+        displayDetectionResult(result);
+        currentDisplayIndex++;
         
-        try {
-            // Pass current packet index as query parameter
-            console.log(`Fetching packet ${currentPacket}...`);
-            const response = await fetch(`/api/realtime/next?index=${currentPacket}`);
-            console.log(`Response status: ${response.status} ${response.statusText}`);
-            
-            // Check if response is ok
-            if (!response.ok) {
-                let errorText = '';
-                try {
-                    errorText = await response.text();
-                } catch (e) {
-                    errorText = 'Could not read error response';
-                }
-                throw new Error(`Server error (${response.status}): ${errorText}`);
-            }
-            
-            const data = await response.json();
-            console.log(`Data received:`, data);
-            
-            // Check for error in response
-            if (!data.success) {
-                throw new Error(data.error || 'Unknown error from server');
-            }
-            
-            // Check again after response (async timing issue protection)
-            if (!isRunning || currentPacket >= totalPackets) {
-                isFetching = false;
-                return;
-            }
-            
-            if (!data.done) {
-                // Increment counter FIRST
-                currentPacket++;
-                
-                displayDetectionResult(data.result);
-                detectionResults.push(data.result);
-                updateStatistics();
-                
-                // Check if we've reached the limit
-                if (currentPacket >= totalPackets) {
-                    isFetching = false;
-                    stopDetection();
-                    showSummary();
-                    return;
-                }
-            } else {
-                isFetching = false;
-                stopDetection();
-                showSummary();
-                return;
-            }
-        } catch (error) {
-            console.error('Detection error:', error);
-            // Show error to user
-            const errorMsg = error.message || 'Unknown error occurred';
-            alert('Detection error: ' + errorMsg + '\n\nStopping detection. Please check the console for details.');
-            stopDetection();
-        } finally {
-            isFetching = false;
-        }
-    }, detectionSpeed);
+        // Update stats incrementally
+        updateStatistics();
+        
+    }, displaySpeed);
 }
 
-function stopDetection() {
-    isRunning = false;
-    isFetching = false;  // Reset the fetching flag
-    if (detectionInterval) {
-        clearInterval(detectionInterval);
-        detectionInterval = null;
+function stopDisplay() {
+    isDisplaying = false;
+    if (displayInterval) {
+        clearInterval(displayInterval);
+        displayInterval = null;
     }
     document.getElementById('start-btn').style.display = 'block';
     document.getElementById('stop-btn').style.display = 'none';
@@ -504,21 +471,23 @@ function displayDetectionResult(result) {
 }
 
 function updateStatistics() {
+    const displayedResults = detectionResults.slice(0, currentDisplayIndex);
+    
+    if (displayedResults.length === 0) return;
+    
     // Progress
-    const progress = (currentPacket / totalPackets) * 100;
+    const progress = (currentDisplayIndex / totalPackets) * 100;
     document.getElementById('progress-bar').style.width = progress + '%';
     document.getElementById('progress-percent').textContent = progress.toFixed(0) + '%';
-    document.getElementById('progress-text').textContent = `${currentPacket} / ${totalPackets} packets`;
+    document.getElementById('progress-text').textContent = `${currentDisplayIndex} / ${totalPackets} packets`;
     
-    if (detectionResults.length === 0) return;
+    // Calculate metrics from displayed results
+    const correct = displayedResults.filter(r => r.correct).length;
+    const accuracy = (correct / displayedResults.length) * 100;
+    const avgConf = displayedResults.reduce((sum, r) => sum + r.confidence, 0) / displayedResults.length * 100;
     
-    // Calculate metrics
-    const correct = detectionResults.filter(r => r.correct).length;
-    const accuracy = (correct / detectionResults.length) * 100;
-    const avgConf = detectionResults.reduce((sum, r) => sum + r.confidence, 0) / detectionResults.length * 100;
-    
-    const attacks = detectionResults.filter(r => r.prediction === 'ATTACK').length;
-    const normal = detectionResults.filter(r => r.prediction === 'NORMAL').length;
+    const attacks = displayedResults.filter(r => r.prediction === 'ATTACK').length;
+    const normal = displayedResults.filter(r => r.prediction === 'NORMAL').length;
     
     // Update metrics
     document.getElementById('stat-accuracy').textContent = accuracy.toFixed(1) + '%';
@@ -528,20 +497,20 @@ function updateStatistics() {
     
     // Alert levels
     const alertCounts = {SAFE: 0, MEDIUM: 0, HIGH: 0, CRITICAL: 0};
-    detectionResults.forEach(r => alertCounts[r.alert_level]++);
+    displayedResults.forEach(r => alertCounts[r.alert_level]++);
     
     Object.keys(alertCounts).forEach(level => {
         const count = alertCounts[level];
-        const percent = (count / detectionResults.length) * 100;
+        const percent = (count / displayedResults.length) * 100;
         document.getElementById(`alert-${level.toLowerCase()}-count`).textContent = count;
         document.getElementById(`alert-${level.toLowerCase()}-bar`).style.width = percent + '%';
     });
     
     // Confusion matrix
-    const tp = detectionResults.filter(r => r.prediction === 'ATTACK' && r.true_label === 'ATTACK').length;
-    const tn = detectionResults.filter(r => r.prediction === 'NORMAL' && r.true_label === 'NORMAL').length;
-    const fp = detectionResults.filter(r => r.prediction === 'ATTACK' && r.true_label === 'NORMAL').length;
-    const fn = detectionResults.filter(r => r.prediction === 'NORMAL' && r.true_label === 'ATTACK').length;
+    const tp = displayedResults.filter(r => r.prediction === 'ATTACK' && r.true_label === 'ATTACK').length;
+    const tn = displayedResults.filter(r => r.prediction === 'NORMAL' && r.true_label === 'NORMAL').length;
+    const fp = displayedResults.filter(r => r.prediction === 'ATTACK' && r.true_label === 'NORMAL').length;
+    const fn = displayedResults.filter(r => r.prediction === 'NORMAL' && r.true_label === 'ATTACK').length;
     
     document.getElementById('confusion-matrix-section').style.display = 'block';
     document.getElementById('cm-tp').textContent = tp;
@@ -553,7 +522,7 @@ function updateStatistics() {
 function showSummary() {
     if (detectionResults.length === 0) return;
     
-    // Calculate final metrics
+    // Calculate final metrics from ALL results
     const correct = detectionResults.filter(r => r.correct).length;
     const accuracy = (correct / detectionResults.length) * 100;
     
@@ -583,6 +552,32 @@ function showSummary() {
         <div>═══════════════════════════════════════════════════════</div>
     </div>`;
     feed.scrollTop = feed.scrollHeight;
+}
+
+function showComprehensivePlot(plotUrl) {
+    // Add plot display section after summary
+    const summarySection = document.getElementById('summary-section');
+    
+    // Create plot section if it doesn't exist
+    let plotSection = document.getElementById('plot-section');
+    if (!plotSection) {
+        plotSection = document.createElement('div');
+        plotSection.id = 'plot-section';
+        plotSection.className = 'row justify-content-center mt-4';
+        plotSection.innerHTML = `
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        <h4 class="mb-0"><i class="bi bi-graph-up"></i> Comprehensive Detection Analysis</h4>
+                    </div>
+                    <div class="card-body text-center">
+                        <img src="${plotUrl}" alt="Detection Analysis" class="img-fluid" style="max-width: 100%; height: auto;">
+                    </div>
+                </div>
+            </div>
+        `;
+        summarySection.parentNode.insertBefore(plotSection, summarySection);
+    }
 }
 </script>
 {% endblock %}
