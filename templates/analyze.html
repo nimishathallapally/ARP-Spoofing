@@ -62,11 +62,12 @@
                     </div>
                     
                     <div class="mb-4">
-                        <label for="file-input" class="form-label fw-bold">Select CSV File</label>
+                        <label for="file-input" class="form-label fw-bold">Select File</label>
                         <input class="form-control form-control-lg" type="file" id="file-input" 
-                               accept=".csv" required>
+                               accept=".csv,.pcap,.pcapng,.cap" required>
                         <div class="form-text">
-                            <i class="bi bi-info-circle"></i> Supported formats: CSV (max 50MB)
+                            <i class="bi bi-info-circle"></i> Supported formats: CSV, PCAP, PCAPNG, CAP (max 50MB)
+                            <br><i class="bi bi-arrow-right"></i> PCAP files will be automatically converted to CSV
                         </div>
                     </div>
                     
@@ -254,10 +255,19 @@
         const errorSection = document.getElementById('error-section');
         const progressSection = document.getElementById('progress-section');
         
+        // Check if it's a PCAP file
+        const isPcap = file.name.toLowerCase().match(/\.(pcap|pcapng|cap)$/);
+        
         // Hide previous results
         if (resultsSection) resultsSection.style.display = 'none';
         if (errorSection) errorSection.style.display = 'none';
-        if (progressSection) progressSection.style.display = 'block';
+        if (progressSection) {
+            progressSection.style.display = 'block';
+            const progressMsg = progressSection.querySelector('h5');
+            if (progressMsg && isPcap) {
+                progressMsg.innerHTML = '<i class="bi bi-hourglass-split"></i> Converting PCAP to CSV and analyzing...';
+            }
+        }
         
         // Create form data
         const formData = new FormData();

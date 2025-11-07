@@ -150,8 +150,6 @@ source venv/bin/activate  # On Linux/Mac
 venv\Scripts\activate  # On Windows
 ```
 
-> **Note:** Ensure Python 3.8+ is installed. Check with `python --version` or `python3 --version`.
-
 3. **Install dependencies:**
 ```bash
 # Core ML dependencies

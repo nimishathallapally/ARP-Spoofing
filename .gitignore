@@ -157,3 +157,15 @@ mlruns/
 docs/_build/
 docs/_static/
 docs/_templates/
+
+# PCAP files and uploads
+uploads/
+*.pcap
+*.pcapng
+*.cap
+
+# Real-time detection plots (temporary)
+static/plots/realtime_*.png
+
+# Temporary CSV files
+data/balanced/unnamed.csv

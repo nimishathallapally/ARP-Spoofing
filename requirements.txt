@@ -59,3 +59,4 @@ mlflow>=2.4.0       # ML experiment tracking (optional)
 # Network Analysis (Optional - for real network integration)
 scapy>=2.5.0        # Packet manipulation
 pyshark>=0.6.0      # Packet analysis
+nfstream>=6.5.3     # PCAP to CSV conversion with flow features

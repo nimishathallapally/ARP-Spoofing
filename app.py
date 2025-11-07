@@ -2,6 +2,9 @@ import os
 import pickle
 import pandas as pd
 import numpy as np
+import subprocess
+import tempfile
+from pathlib import Path
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for, flash
 from werkzeug.utils import secure_filename
 from datetime import datetime
@@ -19,10 +22,107 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['SESSION_FOLDER'], exist_ok=True)
 
 # Allowed file extensions
-ALLOWED_EXTENSIONS = {'csv'}
+ALLOWED_EXTENSIONS = {'csv', 'pcap', 'pcapng', 'cap'}
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def is_pcap_file(filename):
+    """Check if file is a PCAP file"""
+    ext = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+    return ext in {'pcap', 'pcapng', 'cap'}
+
+def convert_pcap_to_csv(pcap_path: str, output_csv: str) -> tuple:
+    """
+    Convert PCAP file to CSV using available conversion methods.
+    Tries nfstream first, falls back to scapy if unavailable.
+    
+    Args:
+        pcap_path: Path to PCAP file
+        output_csv: Path to output CSV file
+        
+    Returns:
+        tuple: (success: bool, message: str)
+    """
+    try:
+        # Check which libraries are available
+        nfstream_available = False
+        scapy_available = False
+        
+        try:
+            import nfstream
+            nfstream_available = True
+        except ImportError:
+            pass
+        
+        try:
+            import scapy
+            scapy_available = True
+        except ImportError:
+            pass
+        
+        # Determine which script to use
+        if nfstream_available:
+            script_name = 'pcap_to_csv.py'
+            converter_name = 'nfstream'
+        elif scapy_available:
+            script_name = 'pcap_to_csv_scapy.py'
+            converter_name = 'scapy'
+        else:
+            error_msg = (
+                "PCAP conversion requires either 'nfstream' or 'scapy' library.\n\n"
+                "Install one of:\n"
+                "  pip install scapy        (lightweight, faster to install)\n"
+                "  pip install nfstream     (full-featured, better accuracy)\n\n"
+                "Alternatively:\n"
+                "1. Use the conversion scripts directly from command line\n"
+                "2. Convert PCAP to CSV manually using tools like tshark\n"
+                "3. Upload a CSV file instead"
+            )
+            return False, error_msg
+        
+        # Path to conversion script
+        script_path = Path(__file__).parent / 'scripts' / script_name
+        
+        if not script_path.exists():
+            return False, f"Conversion script not found: {script_path}"
+        
+        # Run the conversion script
+        print(f"Converting PCAP to CSV using {converter_name}...")
+        print(f"Input: {pcap_path}")
+        print(f"Output: {output_csv}")
+        print(f"This may take a while for large PCAP files...")
+        
+        result = subprocess.run(
+            ['python', str(script_path), pcap_path, output_csv, '--label', 'unknown'],
+            capture_output=True,
+            text=True,
+            timeout=300  # 5 minute timeout
+        )
+        
+        if result.returncode == 0:
+            # Check if CSV was actually created
+            if os.path.exists(output_csv):
+                file_size = os.path.getsize(output_csv)
+                print(f"✓ PCAP converted successfully using {converter_name}")
+                print(f"✓ Output: {output_csv} ({file_size:,} bytes)")
+                return True, f"Successfully converted PCAP to CSV using {converter_name} ({file_size:,} bytes)"
+            else:
+                return False, "Conversion script completed but CSV file not found"
+        else:
+            error_msg = result.stderr or result.stdout or "Unknown error"
+            print(f"✗ PCAP conversion failed: {error_msg}")
+            # Limit error message length for user display
+            short_error = error_msg[:500] + "..." if len(error_msg) > 500 else error_msg
+            return False, f"PCAP conversion failed: {short_error}"
+            
+    except subprocess.TimeoutExpired:
+        return False, "PCAP conversion timed out (>5 minutes). File may be too large."
+    except Exception as e:
+        print(f"✗ Error converting PCAP: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False, f"Error converting PCAP: {str(e)}"
 
 # Global variable to store loaded model
 current_model = None
@@ -321,7 +421,7 @@ def upload_file():
             return jsonify({'success': False, 'error': 'No file selected'}), 400
         
         if not allowed_file(file.filename):
-            return jsonify({'success': False, 'error': 'Only CSV files are allowed'}), 400
+            return jsonify({'success': False, 'error': 'Only CSV and PCAP files are allowed'}), 400
         
         # Load the selected model
         success, message = load_specific_model(model_key)
@@ -332,6 +432,29 @@ def upload_file():
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
+        
+        # Track if source was a PCAP file (unlabeled data)
+        is_from_pcap = is_pcap_file(filename)
+        
+        # Check if it's a PCAP file
+        if is_from_pcap:
+            print(f"📦 PCAP file detected: {filename}")
+            
+            # Convert PCAP to CSV
+            csv_filename = filename.rsplit('.', 1)[0] + '.csv'
+            csv_filepath = os.path.join(app.config['UPLOAD_FOLDER'], csv_filename)
+            
+            success, message = convert_pcap_to_csv(filepath, csv_filepath)
+            
+            if not success:
+                return jsonify({
+                    'success': False, 
+                    'error': f'PCAP conversion failed: {message}'
+                }), 500
+            
+            # Update filepath to use the converted CSV
+            filepath = csv_filepath
+            print(f"✓ Using converted CSV: {csv_filepath}")
         
         # Read and process the CSV
         df = pd.read_csv(filepath)
@@ -403,8 +526,9 @@ def upload_file():
         attacks_detected = int(np.sum(y_pred_binary))
         normal_flows = total_flows - attacks_detected
         
-        # Calculate accuracy metrics if ground truth is available
-        if has_labels:
+        # Calculate accuracy metrics ONLY if ground truth is available AND not from PCAP
+        # PCAP files are unlabeled data - just show detection stats
+        if has_labels and not is_from_pcap:
             accuracy = accuracy_score(y_true, y_pred_binary) * 100
             recall = recall_score(y_true, y_pred_binary) * 100
             precision = precision_score(y_true, y_pred_binary, zero_division=0) * 100
@@ -417,9 +541,10 @@ def upload_file():
                 'tp': int(cm[1, 1])
             }
         else:
-            accuracy = 0
-            recall = 0
-            precision = 0
+            # For PCAP files or unlabeled data, don't calculate accuracy metrics
+            accuracy = None
+            recall = None
+            precision = None
             confusion_data = None
         
         # Prepare detection samples (top 50 most suspicious)
@@ -440,12 +565,16 @@ def upload_file():
             'total_flows': total_flows,
             'attacks_detected': attacks_detected,
             'normal_flows': normal_flows,
-            'accuracy': round(accuracy, 2),
-            'recall': round(recall, 2),
-            'precision': round(precision, 2),
             'detections': detections,
-            'model_name': AVAILABLE_MODELS[model_key]['name']
+            'model_name': AVAILABLE_MODELS[model_key]['name'],
+            'is_from_pcap': is_from_pcap  # Track if source was PCAP
         }
+        
+        # Add accuracy metrics only if available (not from PCAP)
+        if accuracy is not None:
+            stats['accuracy'] = round(accuracy, 2)
+            stats['recall'] = round(recall, 2)
+            stats['precision'] = round(precision, 2)
         
         session['analysis_stats'] = stats
         session.permanent = True  # Make session permanent

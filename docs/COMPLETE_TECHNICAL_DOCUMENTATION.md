@@ -39,6 +39,8 @@ This project implements a comprehensive Machine Learning-based ARP (Address Reso
 
 ### System Capabilities
 ✅ **14 Machine Learning Models** (Supervised, Unsupervised, Ensemble, Hybrid)  
+✅ **PCAP File Support** - Direct upload and analysis of .pcap, .pcapng, .cap network captures  
+✅ **Automated PCAP to CSV Conversion** - Intelligent feature extraction from raw packet data  
 ✅ **Real-Time Batch Detection** - Process all packets at once with comprehensive visualization  
 ✅ **Batch Analysis** with CSV upload and downloadable reports  
 ✅ **Interactive Dashboard** with performance metrics and charts  
@@ -60,6 +62,8 @@ This project implements a comprehensive Machine Learning-based ARP (Address Reso
 - scikit-learn 1.3.2 (Machine learning)
 - NumPy 1.26.2 (Numerical computing)
 - Pandas 2.1.3 (Data manipulation)
+- Scapy 2.5.0 (Packet manipulation and PCAP processing)
+- NFStream 6.5.3 (Optional - Advanced network flow extraction)
 
 **Frontend Framework**:
 - Bootstrap 5.3.0 (UI components)
@@ -73,23 +77,155 @@ This project implements a comprehensive Machine Learning-based ARP (Address Reso
 **Model Storage**:
 - Pickle/Joblib (Model serialization)
 
+**Network Analysis Tools**:
+- Scapy (Primary PCAP converter - lightweight)
+- NFStream (Optional - Advanced flow analysis with more features)
+- CSV to PCAP conversion utilities
+
 ### Application Architecture
 
 The system follows a modular architecture with clear separation of concerns:
 
-- **Data Layer**: CSV datasets, session storage, model files
-- **Processing Layer**: Feature engineering, preprocessing, prediction
+- **Data Layer**: CSV datasets, PCAP files, session storage, model files
+- **Processing Layer**: Feature engineering, PCAP conversion, preprocessing, prediction
 - **Application Layer**: Flask routes, business logic, session management
 - **Presentation Layer**: HTML templates, JavaScript, charts
 
-### Workflow
+### Data Pipeline
 
-1. **Upload** → User uploads network traffic CSV dataset
-2. **Preprocess** → Automatic feature scaling and normalization
-3. **Select Model** → Choose from 14 available detection models
-4. **Analyze** → Batch or real-time detection processing
-5. **Visualize** → Interactive charts, confusion matrices, ROC curves
-6. **Export** → Download results and reports
+The system supports multiple data input formats with automated conversion:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         DATA INPUT SOURCES                           │
+└─────────────────────────────────────────────────────────────────────┘
+                    │                           │
+                    ▼                           ▼
+        ┌──────────────────────┐    ┌──────────────────────┐
+        │   PCAP Files         │    │   CSV Files          │
+        │  (.pcap, .pcapng)    │    │  (Pre-extracted)     │
+        └──────────────────────┘    └──────────────────────┘
+                    │                           │
+                    ▼                           │
+        ┌──────────────────────┐                │
+        │  PCAP Converter      │                │
+        │  ┌────────────────┐  │                │
+        │  │ 1. NFStream    │  │                │
+        │  │    (Primary)   │  │                │
+        │  │                │  │                │
+        │  │ 2. Scapy       │  │                │
+        │  │    (Fallback)  │  │                │
+        │  └────────────────┘  │                │
+        │                      │                │
+        │  Flow Extraction:    │                │
+        │  • Bidirectional     │                │
+        │  • Statistical       │                │
+        │  • Temporal          │                │
+        │  • Protocol-based    │                │
+        └──────────────────────┘                │
+                    │                           │
+                    ▼                           │
+        ┌──────────────────────┐                │
+        │  Unified CSV Format  │ ◄──────────────┘
+        │  (85+ features)      │
+        └──────────────────────┘
+                    │
+                    ▼
+        ┌──────────────────────┐
+        │  Feature Selection   │
+        │  (25 key features)   │
+        └──────────────────────┘
+                    │
+                    ▼
+        ┌──────────────────────┐
+        │  Preprocessing       │
+        │  • StandardScaler    │
+        │  • Feature Ordering  │
+        └──────────────────────┘
+                    │
+                    ▼
+        ┌──────────────────────┐
+        │  ML Model Selection  │
+        │  (14 models)         │
+        └──────────────────────┘
+                    │
+                    ▼
+        ┌──────────────────────┐
+        │  Prediction Engine   │
+        │  • Threshold: 0.4    │
+        │  • Binary Output     │
+        └──────────────────────┘
+                    │
+                    ├───────────────┬───────────────┐
+                    ▼               ▼               ▼
+        ┌─────────────────┐ ┌─────────────┐ ┌──────────────┐
+        │  Labeled Data   │ │ PCAP Data   │ │ Unlabeled    │
+        │  Results        │ │ Results     │ │ CSV Results  │
+        │                 │ │             │ │              │
+        │  • Accuracy     │ │ • Flows     │ │ • Flows      │
+        │  • Precision    │ │ • Attacks   │ │ • Attacks    │
+        │  • Recall       │ │ • Normal    │ │ • Normal     │
+        │  • Confusion    │ │ • Detection │ │ • Detection  │
+        │    Matrix       │ │   Rate      │ │   Rate       │
+        │  • ROC-AUC      │ │             │ │              │
+        └─────────────────┘ └─────────────┘ └──────────────┘
+                    │               │               │
+                    └───────────────┴───────────────┘
+                                    │
+                                    ▼
+                    ┌──────────────────────────────┐
+                    │  Interactive Dashboard       │
+                    │  • Charts & Visualizations   │
+                    │  • Detection Tables          │
+                    │  • Export Options            │
+                    └──────────────────────────────┘
+```
+
+### PCAP Processing Pipeline
+
+**Supported Formats**:
+- `.pcap` - Standard packet capture format
+- `.pcapng` - Next-generation PCAP format
+- `.cap` - Alternative packet capture format
+
+**Conversion Methods**:
+
+1. **NFStream (Primary)** - Advanced flow extraction
+   - Leverages libpcap for efficient packet parsing
+   - Extracts 80+ network flow features
+   - Bidirectional flow aggregation
+   - Protocol-aware feature extraction
+   - High accuracy, slower installation
+
+2. **Scapy (Fallback)** - Lightweight alternative
+   - Pure Python implementation
+   - No complex dependencies
+   - Extracts essential 85+ features
+   - Manual flow aggregation
+   - Fast installation, reliable backup
+
+**Feature Extraction from PCAP**:
+```
+Raw Packets → Flow Grouping (5-tuple) → Statistical Aggregation
+                                       → Temporal Analysis
+                                       → Protocol Inspection
+                                       → Feature Vector (85 features)
+                                       → CSV Output
+```
+
+**Flow 5-Tuple Grouping**:
+- Source IP Address
+- Destination IP Address
+- Source Port
+- Destination Port
+- Protocol (TCP/UDP/ICMP)
+
+**Extracted Features**:
+- **Bidirectional Metrics**: packets, bytes, duration
+- **Temporal Features**: IAT (Inter-Arrival Time) mean, std, min, max
+- **Statistical Features**: packet size distribution, flow rates
+- **Protocol Information**: TCP flags, IP version, VLAN tags
+- **Derived Metrics**: byte rate, packet rate, avg packet size
 
 ---
 
@@ -797,7 +933,7 @@ Testing on **balanced subset** of the UQ dataset (equal attack/normal distributi
 | Metric | Training Set (96,653) | Test Set (27,726) | **Unknown UQ (11,904)** |
 |--------|----------------------|-------------------|-------------------------|
 | **Accuracy** | 98.36% | 96.00% | **96.31%** |
-| **Precision** | 98.23% | 96.51% | **96.38%** |
+| **Precision** | 98.23% | 96.51% |   **96.38%** |
 | **Recall** | 98.51% | 95.46% | **96.24%** |
 | **F1-Score** | 98.37% | 95.98% | **96.31%** |
 | **TNR** | 98.20% | 96.54% | **96.37%** |
@@ -928,25 +1064,67 @@ The system features a modern, responsive web interface built with Bootstrap 5 an
 **URL**: `http://localhost:5000/analyze`
 
 **Features**:
-- CSV file upload (max 50MB)
+- **CSV file upload** (max 50MB)
+- **PCAP file upload** (.pcap, .pcapng, .cap formats)
+- **Automatic PCAP to CSV conversion** with intelligent fallback
 - 13 model selection options (5 supervised, 4 unsupervised, 4 hybrid)
 - Automatic data preprocessing
 - Comprehensive results display
 - Downloadable reports (CSV/JSON)
 
-**Results Display**:
-- Confusion matrix heatmap
-- Classification metrics table
-- ROC curve visualization
-- Precision-recall curve
-- Feature importance chart
-- Sample predictions with confidence scores
+**Supported File Formats**:
+1. **CSV Files** (Direct analysis)
+   - Pre-extracted network flow features
+   - Optional Label column for evaluation
+   - 85+ features auto-detected
+   
+2. **PCAP Files** (Auto-converted to CSV)
+   - `.pcap` - Standard packet capture
+   - `.pcapng` - Next-generation PCAP
+   - `.cap` - Alternative capture format
+   - Automatic flow extraction and feature engineering
+   - Unlabeled data (detection-only mode)
+
+**PCAP Processing Workflow**:
+```
+Upload PCAP → Detect Format → Try NFStream Conversion
+                             ↓ (if fails)
+                             → Try Scapy Conversion
+                             ↓ (success)
+                             → Extract 85+ Features
+                             ↓
+                             → Feature Selection (25 key features)
+                             ↓
+                             → ML Analysis
+                             ↓
+                             → Detection Results (No Accuracy Metrics)
+```
+
+**Results Display for CSV (Labeled Data)**:
+- ✅ Confusion matrix heatmap
+- ✅ Accuracy, Precision, Recall metrics
+- ✅ ROC curve visualization
+- ✅ Precision-recall curve
+- ✅ Feature importance chart
+- ✅ Sample predictions with confidence scores
+
+**Results Display for PCAP (Unlabeled Data)**:
+- ✅ Total flows analyzed
+- ✅ Attacks detected count
+- ✅ Normal flows count
+- ✅ Detection rate percentage
+- ✅ Detection distribution pie chart
+- ✅ Top 50 most suspicious flows
+- ❌ No accuracy/precision/recall (no ground truth)
+- ❌ No confusion matrix
+- ℹ️ Informational message explaining unlabeled data analysis
 
 **Supported Features**:
 - Automatic feature detection (25 required)
 - Missing value handling
 - Feature scaling normalization
 - Label column detection (optional)
+- Smart unlabeled data handling
 
 ---
 
@@ -1124,6 +1302,155 @@ The system features a modern, responsive web interface built with Bootstrap 5 an
 
 ---
 
+## PCAP Conversion Utilities
+
+The system includes standalone command-line tools for PCAP ↔ CSV conversion, enabling offline analysis and data preparation.
+
+### Available Tools
+
+#### 1. pcap_to_csv.py (NFStream-based)
+
+**Location**: `scripts/pcap_to_csv.py`
+
+**Purpose**: High-fidelity PCAP to CSV conversion using NFStream library
+
+**Features**:
+- Leverages libpcap for efficient packet parsing
+- Extracts 80+ bidirectional flow features
+- Protocol-aware feature extraction
+- Statistical aggregation (mean, std, min, max)
+- Temporal analysis (IAT metrics)
+- Supports all standard PCAP formats
+
+**Usage**:
+```bash
+python scripts/pcap_to_csv.py input.pcap output.csv
+```
+
+**Extracted Features**:
+- Bidirectional packets/bytes
+- Duration and flow rates
+- IAT (Inter-Arrival Time) statistics
+- Packet size distribution
+- Protocol information
+- TCP flags and VLAN tags
+
+**Advantages**:
+- ✅ Most comprehensive feature extraction
+- ✅ Handles large PCAP files efficiently
+- ✅ Automatic bidirectional flow aggregation
+- ✅ Protocol-specific features
+
+**Disadvantages**:
+- ⚠️ Complex installation (requires compilation)
+- ⚠️ Dependencies on system libraries
+
+---
+
+#### 2. pcap_to_csv_scapy.py (Scapy-based)
+
+**Location**: `scripts/pcap_to_csv_scapy.py`
+
+**Purpose**: Lightweight PCAP to CSV conversion using pure Python Scapy
+
+**Features**:
+- Pure Python implementation (no compilation)
+- Extracts 85+ essential flow features
+- Manual flow aggregation by 5-tuple
+- Statistical calculations (manual mean/std)
+- Compatible with all PCAP formats
+- Fast installation, reliable fallback
+
+**Usage**:
+```bash
+python scripts/pcap_to_csv_scapy.py input.pcap output.csv
+```
+
+**Flow Aggregation**:
+```
+5-Tuple Key: (src_ip, dst_ip, src_port, dst_port, protocol)
+↓
+Packet Collection per Flow
+↓
+Statistical Aggregation
+↓
+Feature Vector Generation
+↓
+CSV Output
+```
+
+**Extracted Features** (85 total):
+- **Bidirectional Metrics** (6):
+  - bidirectional_packets, bidirectional_bytes
+  - bidirectional_duration_ms
+  - src2dst_packets, src2dst_bytes
+  - dst2src_packets, dst2src_bytes
+
+- **Temporal Features** (8):
+  - bidirectional_mean_iat, bidirectional_stddev_iat
+  - bidirectional_min_iat, bidirectional_max_iat
+  - src2dst_mean_iat, src2dst_stddev_iat
+  - dst2src_mean_iat, dst2src_stddev_iat
+
+- **Packet Size Stats** (12):
+  - bidirectional_mean_ps, bidirectional_stddev_ps
+  - bidirectional_min_ps, bidirectional_max_ps
+  - src2dst_mean_ps, src2dst_stddev_ps
+  - dst2src_mean_ps, dst2src_stddev_ps
+  - Plus variance metrics
+
+- **Protocol Information** (10):
+  - protocol, ip_version
+  - TCP flags (syn, ack, psh, urg, fin, rst)
+  - vlan_id, tunnel_id
+
+- **Port Details** (4):
+  - src_port, dst_port
+  - src_port_is_well_known
+  - dst_port_is_well_known
+
+- **Derived Features** (3):
+  - packet_rate = packets / duration
+  - byte_rate = bytes / duration
+  - avg_packet_size = bytes / packets
+
+- **Label Column**: 
+  - Always set to 'unknown' for PCAP files
+
+**Advantages**:
+- ✅ Easy installation (pip install scapy)
+- ✅ No system dependencies
+- ✅ Works on all platforms
+- ✅ Reliable fallback option
+
+**Disadvantages**:
+- ⚠️ Manual statistical calculations
+- ⚠️ Slightly slower than NFStream
+
+**Key Implementation Details**:
+```python
+# EDecimal to float conversion (critical for compatibility)
+first_time_float = float(flow['first_time'])
+last_time_float = float(flow['last_time'])
+
+# Manual mean/std calculation (no numpy in flow processing)
+mean = sum(values) / len(values)
+variance = sum((x - mean) ** 2 for x in values) / len(values)
+std = variance ** 0.5
+
+# Flow grouping by 5-tuple
+flow_key = (src_ip, dst_ip, src_port, dst_port, protocol)
+flows[flow_key].append(packet)
+```
+
+---
+
+### Web Application PCAP Integration
+
+The Flask web application automatically uses these conversion tools
+
+---
+
 ## Installation Guide
 
 ### System Requirements
@@ -1174,6 +1501,41 @@ Open web browser to http://localhost:5000
 - Seaborn 0.13.0
 - Joblib 1.3.0
 
+**PCAP Processing** (Choose one or both):
+- **Scapy 2.5.0** (Required - Lightweight fallback)
+  - Pure Python packet manipulation
+  - No compilation needed
+  - Works on all platforms
+  - Used as primary fallback
+
+- **NFStream 6.5.3** (Optional - Advanced features)
+  - High-performance flow extraction
+  - Requires system libraries (libpcap)
+  - May need compilation
+  - Best feature coverage
+
+**Installation Commands**:
+```bash
+# Core packages (required)
+pip install flask scikit-learn numpy pandas matplotlib seaborn joblib
+
+# PCAP support - Scapy (required for PCAP upload)
+pip install scapy
+
+# PCAP support - NFStream (optional, advanced)
+# Note: May require system libraries and compilation
+pip install nfstream
+```
+
+**Recommended Installation**:
+```bash
+# Minimal setup (works with PCAP)
+pip install -r requirements.txt scapy
+
+# Full setup (best PCAP features)
+pip install -r requirements.txt scapy nfstream
+```
+
 ### Directory Structure After Installation
 
 All necessary directories created automatically:
@@ -1181,9 +1543,57 @@ All necessary directories created automatically:
 - `session_data/` - Session pickle files
 - `uploads/` - Temporary upload storage
 - `outputs/plots/` - Generated visualizations
+- `scripts/` - PCAP conversion utilities
 
 ---
 
+- ✅ Comprehensive Visualizations - 6-panel matplotlib plots
+
+**Performance**:
+- Random Forest: 96.95% accuracy (imbalanced), 93.78% (balanced)
+- ROC-AUC: 99.08% (imbalanced), 98.64% (balanced)
+- Recall: 90.55% across all hybrid models
+- Precision: 96.81% on balanced dataset
+
+
+
+### Future Enhancements
+
+**Planned Features**:
+1. **Live Network Capture**
+   - Direct interface with network adapters
+   - Real-time packet capture during analysis
+   - Integration with tcpdump/Wireshark
+
+2. **Advanced PCAP Analysis**
+   - Deep packet inspection
+   - Payload analysis
+   - Protocol-specific attack detection
+   - Automated PCAP report generation
+
+3. **Enhanced Visualization**
+   - Network topology mapping
+   - Attack pattern visualization
+   - Time-series analysis
+   - Geographic IP mapping
+
+4. **Model Improvements**
+   - Deep learning models (LSTM, CNN)
+   - Transfer learning from other network datasets
+   - Automated hyperparameter tuning
+   - Ensemble model optimization
+
+5. **Export Options**
+   - PDF report generation
+   - JSON API for integration
+   - SIEM integration (Splunk, ELK)
+   - Alert notification system (email, Slack)
+
+6. **Performance Optimization**
+   - GPU acceleration for ML inference
+   - Streaming PCAP processing
+   - Distributed analysis for large files
+   - Caching and memoization
 
 ---
 

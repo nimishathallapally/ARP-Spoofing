@@ -24,6 +24,7 @@
             <div class="stat-label text-white">Attacks Detected</div>
         </div>
     </div>
+    {% if not stats.get('is_from_pcap', False) and 'recall' in stats %}
     <div class="col-md-3">
         <div class="card stat-card bg-success text-white">
             <div class="stat-value" id="recall-rate">{{ "%.1f"|format(stats.get('recall', 0)) }}%</div>
@@ -36,6 +37,20 @@
             <div class="stat-label text-white">Precision</div>
         </div>
     </div>
+    {% else %}
+    <div class="col-md-3">
+        <div class="card stat-card bg-success text-white">
+            <div class="stat-value" id="normal-flows">{{ stats.get('normal_flows', 0) }}</div>
+            <div class="stat-label text-white">Normal Flows</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card bg-info text-white">
+            <div class="stat-value" id="detection-rate">{{ "%.1f"|format((stats.get('attacks_detected', 0) / stats.get('total_flows', 1) * 100)) }}%</div>
+            <div class="stat-label text-white">Detection Rate</div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 <!-- Charts Row -->
@@ -50,6 +65,7 @@
             </div>
         </div>
     </div>
+    {% if not stats.get('is_from_pcap', False) and 'accuracy' in stats %}
     <div class="col-md-6">
         <div class="card">
             <div class="card-header">
@@ -60,6 +76,23 @@
             </div>
         </div>
     </div>
+    {% else %}
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-info-circle-fill"></i> Analysis Info</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info mb-0">
+                    <h6><i class="bi bi-file-earmark-binary"></i> PCAP File Analysis</h6>
+                    <p class="mb-2">This analysis is based on unlabeled PCAP file data.</p>
+                    <p class="mb-0"><strong>Note:</strong> Accuracy metrics are not available for unlabeled data. 
+                    The model detected {{ stats.get('attacks_detected', 0) }} potential attacks out of {{ stats.get('total_flows', 0) }} total flows.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 <!-- Recent Detections -->
@@ -151,6 +184,7 @@
         }
     });
     
+    {% if not stats.get('is_from_pcap', False) and 'accuracy' in stats %}
     const metricsCtx = document.getElementById('metricsChart').getContext('2d');
     const metricsChart = new Chart(metricsCtx, {
         type: 'bar',
@@ -178,5 +212,6 @@
             }
         }
     });
+    {% endif %}
 </script>
 {% endblock %}
