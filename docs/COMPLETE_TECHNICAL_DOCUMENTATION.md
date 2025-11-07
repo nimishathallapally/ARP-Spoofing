@@ -152,7 +152,7 @@ The system supports multiple data input formats with automated conversion:
                     ▼
         ┌──────────────────────┐
         │  Prediction Engine   │
-        │  • Threshold: 0.4    │
+        │  • Threshold: 0.5    │
         │  • Binary Output     │
         └──────────────────────┘
                     │
